@@ -9,10 +9,13 @@ dist
 # Node dependencies
 node_modules
 
-# Lock files (use bun.lockb only)
+# Lock files (all package managers)
 package-lock.json
 yarn.lock
 pnpm-lock.yaml
+bun.lock
+bun.lockb
+*.lock
 
 # Logs
 logs
