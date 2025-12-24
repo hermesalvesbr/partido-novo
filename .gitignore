@@ -1,0 +1,38 @@
+# Nuxt dev/build outputs
+.output
+.data
+.nuxt
+.nitro
+.cache
+dist
+
+# Node dependencies
+node_modules
+
+# Lock files (use bun.lockb only)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Logs
+logs
+*.log
+
+# Misc
+.DS_Store
+.fleet
+.idea
+
+# Local env files
+.env
+.env.*
+!.env.example
+
+# Scripts folder (contains sensitive data and import scripts)
+scripts/
+
+# Data files (large CSV files)
+dados/
+
+# Sensitive server API files (direct DB access)
+server/api/
