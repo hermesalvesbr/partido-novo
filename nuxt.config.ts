@@ -8,6 +8,46 @@ export default defineNuxtConfig({
 
   devtools: { enabled: true },
 
+  // SEO Global Configuration
+  app: {
+    head: {
+      title: 'NOVO Pernambuco',
+      titleTemplate: '%s | NOVO Pernambuco',
+      htmlAttrs: {
+        lang: 'pt-BR',
+      },
+      charset: 'utf-8',
+      viewport: 'width=device-width, initial-scale=1',
+      meta: [
+        { name: 'description', content: 'Consulte dados eleitorais do TSE, candidatos, resultados de eleições e histórico político. Pesquise por nome, cidade ou região.' },
+        { name: 'author', content: 'Softagon Sistemas' },
+        { name: 'keywords', content: 'eleições, candidatos, TSE, resultados eleitorais, votos, Pernambuco, Brasil, política, vereador, prefeito, deputado, governador' },
+        // Open Graph
+        { property: 'og:type', content: 'website' },
+        { property: 'og:locale', content: 'pt_BR' },
+        { property: 'og:site_name', content: 'NOVO Pernambuco' },
+        { property: 'og:title', content: 'NOVO Pernambuco - Dados Eleitorais do TSE' },
+        { property: 'og:description', content: 'Consulte dados eleitorais do TSE, candidatos, resultados de eleições e histórico político.' },
+        // Twitter Card
+        { name: 'twitter:card', content: 'summary_large_image' },
+        { name: 'twitter:title', content: 'NOVO Pernambuco - Dados Eleitorais do TSE' },
+        { name: 'twitter:description', content: 'Consulte dados eleitorais do TSE, candidatos, resultados de eleições e histórico político.' },
+        // Theme Color
+        { name: 'theme-color', content: '#0B2A4A' },
+        // Mobile Web App
+        { name: 'mobile-web-app-capable', content: 'yes' },
+        { name: 'apple-mobile-web-app-capable', content: 'yes' },
+        { name: 'apple-mobile-web-app-status-bar-style', content: 'black-translucent' },
+        { name: 'apple-mobile-web-app-title', content: 'NOVO PE' },
+      ],
+      link: [
+        { rel: 'icon', type: 'image/x-icon', href: '/favicon.ico' },
+        { rel: 'apple-touch-icon', href: '/android/android-launchericon-192-192.png' },
+        { rel: 'canonical', href: 'https://novo.softagon.app' },
+      ],
+    },
+  },
+
   // Cloudflare Pages deployment
   nitro: {
     preset: 'cloudflare-pages',
@@ -38,17 +78,17 @@ export default defineNuxtConfig({
         themes: {
           light: {
             colors: {
-              primary: '#0B2A4A',      // Azul institucional
-              secondary: '#FF7A18',    // Laranja NOVO
-              accent: '#FFC800',       // Amarelo Sertão
+              'primary': '#0B2A4A', // Azul institucional
+              'secondary': '#FF7A18', // Laranja NOVO
+              'accent': '#FFC800', // Amarelo Sertão
 
-              background: '#FFFFFF',
-              surface: '#FFFFFF',
+              'background': '#FFFFFF',
+              'surface': '#FFFFFF',
 
-              info: '#1E5A8C',
-              success: '#2E7D32',
-              warning: '#FFC800',
-              error: '#C62828',
+              'info': '#1E5A8C',
+              'success': '#2E7D32',
+              'warning': '#FFC800',
+              'error': '#C62828',
 
               'on-primary': '#FFFFFF',
               'on-secondary': '#FFFFFF',

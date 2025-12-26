@@ -1,6 +1,11 @@
 <script setup lang="ts">
-useHead({
+useSeoMeta({
   title: 'Sobre',
+  description: 'Conheça a Softagon Sistemas, empresa especializada em GovTech com mais de 23 anos de experiência desenvolvendo soluções para gestão pública municipal.',
+  ogTitle: 'Sobre | NOVO Pernambuco',
+  ogDescription: 'Conheça a Softagon Sistemas, empresa especializada em GovTech com mais de 23 anos de experiência.',
+  twitterTitle: 'Sobre | NOVO Pernambuco',
+  twitterDescription: 'Conheça a Softagon Sistemas, empresa especializada em GovTech com mais de 23 anos de experiência.',
 })
 
 // Links de contato

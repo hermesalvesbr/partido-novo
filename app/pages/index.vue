@@ -4,6 +4,16 @@ import { formatNumber, formatSituacao, getSituacaoColor } from '~/utils/formatte
 import { getPartidoLogoUrl } from '~/utils/partido'
 import { generateCandidatoSlugFromUrna } from '~/utils/slug'
 
+// SEO Meta Tags
+useSeoMeta({
+  title: 'Buscar Candidatos',
+  description: 'Pesquise candidatos por nome ou cidade. Consulte dados eleitorais do TSE, histórico de votos e resultados de eleições em todo o Brasil.',
+  ogTitle: 'Buscar Candidatos | NOVO Pernambuco',
+  ogDescription: 'Pesquise candidatos por nome ou cidade. Consulte dados eleitorais do TSE e histórico de eleições.',
+  twitterTitle: 'Buscar Candidatos | NOVO Pernambuco',
+  twitterDescription: 'Pesquise candidatos por nome ou cidade. Consulte dados eleitorais do TSE e histórico de eleições.',
+})
+
 // Composables para separação de responsabilidades
 const {
   loading,

@@ -16,9 +16,24 @@ const mesorregiaoId = computed(() => {
 // Buscar dados da mesorregião e municípios (rápido - IBGE)
 const { mesorregiao, municipios, loading: loadingMeso } = useMesorregiao(mesorregiaoId)
 
-// Título da página
-useHead({
-  title: computed(() => mesorregiao.value?.nome ?? 'Região'),
+// SEO Meta - título dinâmico baseado na mesorregião
+useSeoMeta({
+  title: () => mesorregiao.value?.nome ?? 'Mesorregião',
+  description: () => mesorregiao.value
+    ? `Explore candidatos e dados eleitorais da mesorregião ${mesorregiao.value.nome} (${mesorregiao.value.UF?.sigla}). ${municipios.value?.length ?? 0} municípios disponíveis para consulta.`
+    : 'Explore candidatos e dados eleitorais por mesorregião geográfica do IBGE.',
+  ogTitle: () => mesorregiao.value?.nome
+    ? `${mesorregiao.value.nome} | NOVO Pernambuco`
+    : 'Mesorregião | NOVO Pernambuco',
+  ogDescription: () => mesorregiao.value
+    ? `Candidatos e dados eleitorais da mesorregião ${mesorregiao.value.nome}. ${municipios.value?.length ?? 0} municípios.`
+    : 'Explore candidatos e dados eleitorais por mesorregião.',
+  twitterTitle: () => mesorregiao.value?.nome
+    ? `${mesorregiao.value.nome} | NOVO Pernambuco`
+    : 'Mesorregião | NOVO Pernambuco',
+  twitterDescription: () => mesorregiao.value
+    ? `Candidatos da mesorregião ${mesorregiao.value.nome}. ${municipios.value?.length ?? 0} municípios.`
+    : 'Explore candidatos e dados eleitorais por mesorregião.',
 })
 
 // UF da mesorregião

@@ -2,9 +2,14 @@
 // Gerenciamento de favoritos
 const { favoritosOrdenados, removeFavorito, totalFavoritos } = useFavoritos()
 
-// Meta
-useHead({
+// SEO Meta
+useSeoMeta({
   title: 'Favoritos',
+  description: 'Visualize seus candidatos favoritos salvos. Acompanhe o histórico eleitoral e dados de votação dos candidatos que você marcou como favorito.',
+  ogTitle: 'Favoritos | NOVO Pernambuco',
+  ogDescription: 'Visualize seus candidatos favoritos e acompanhe o histórico eleitoral.',
+  twitterTitle: 'Favoritos | NOVO Pernambuco',
+  twitterDescription: 'Visualize seus candidatos favoritos e acompanhe o histórico eleitoral.',
 })
 
 // Navegação

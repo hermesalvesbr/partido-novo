@@ -151,11 +151,26 @@ const { data: candidatoData, status, error } = await useAsyncData(
   },
 )
 
-// Título da página
-useHead({
-  title: candidatoData.value?.nm_urna_candidato
+// SEO Meta - título dinâmico baseado nos dados do candidato
+useSeoMeta({
+  title: () => candidatoData.value?.nm_urna_candidato
     ? `${candidatoData.value.nm_urna_candidato} - ${candidatoData.value.sg_uf}`
     : 'Candidato',
+  description: () => candidatoData.value
+    ? `Consulte o histórico eleitoral de ${candidatoData.value.nm_urna_candidato} (${candidatoData.value.sg_uf}). ${candidatoData.value.stats.total_votos.toLocaleString('pt-BR')} votos em ${candidatoData.value.stats.anos_ativo.length} eleições. Partidos: ${candidatoData.value.stats.partidos.join(', ')}.`
+    : 'Consulte o histórico eleitoral do candidato, votos e resultados de eleições.',
+  ogTitle: () => candidatoData.value?.nm_urna_candidato
+    ? `${candidatoData.value.nm_urna_candidato} - ${candidatoData.value.sg_uf} | NOVO Pernambuco`
+    : 'Candidato | NOVO Pernambuco',
+  ogDescription: () => candidatoData.value
+    ? `Histórico eleitoral de ${candidatoData.value.nm_urna_candidato}. ${candidatoData.value.stats.total_votos.toLocaleString('pt-BR')} votos em ${candidatoData.value.stats.anos_ativo.length} eleições.`
+    : 'Consulte o histórico eleitoral do candidato.',
+  twitterTitle: () => candidatoData.value?.nm_urna_candidato
+    ? `${candidatoData.value.nm_urna_candidato} - ${candidatoData.value.sg_uf} | NOVO Pernambuco`
+    : 'Candidato | NOVO Pernambuco',
+  twitterDescription: () => candidatoData.value
+    ? `Histórico eleitoral de ${candidatoData.value.nm_urna_candidato}. ${candidatoData.value.stats.total_votos.toLocaleString('pt-BR')} votos.`
+    : 'Consulte o histórico eleitoral do candidato.',
 })
 
 // Navegação

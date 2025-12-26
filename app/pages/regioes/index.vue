@@ -2,8 +2,13 @@
 import type { Estado } from '~/data/eleicoes'
 import { ESTADOS } from '~/data/eleicoes'
 
-useHead({
-  title: 'Regiões',
+useSeoMeta({
+  title: 'Mesorregiões',
+  description: 'Explore as mesorregiões geográficas do IBGE por estado. Consulte municípios, candidatos e dados eleitorais por região.',
+  ogTitle: 'Mesorregiões | NOVO Pernambuco',
+  ogDescription: 'Explore as mesorregiões geográficas do IBGE por estado. Consulte candidatos e dados eleitorais por região.',
+  twitterTitle: 'Mesorregiões | NOVO Pernambuco',
+  twitterDescription: 'Explore as mesorregiões geográficas do IBGE por estado. Consulte candidatos e dados eleitorais por região.',
 })
 
 // Composables
