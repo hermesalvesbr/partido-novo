@@ -1,13 +1,9 @@
 <script setup lang="ts">
 import { PostgrestClient } from '@supabase/postgrest-js'
 
-interface YearStats {
-  ano_eleicao: number
-  total_candidatos: number
-  total_municipios: number
-  total_partidos: number
-  total_votos: number
-}
+// Dados estáticos para filtros
+const anosEleicao = [2024, 2022, 2020, 2018]
+const estados = ['AC', 'AL', 'AM', 'AP', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MG', 'MS', 'MT', 'PA', 'PB', 'PE', 'PI', 'PR', 'RJ', 'RN', 'RO', 'RR', 'RS', 'SC', 'SE', 'SP', 'TO']
 
 interface Candidato {
   nm_candidato: string
@@ -20,20 +16,6 @@ interface Candidato {
   ds_sit_tot_turno: string
   nm_municipio?: string
   nr_turno?: number
-  sq_candidato?: string
-}
-
-interface Partido {
-  sg_partido: string
-  nm_partido: string
-  total_votos: number
-  total_candidatos: number
-}
-
-interface UFStats {
-  sg_uf: string
-  total_candidatos: number
-  total_votos: number
 }
 
 const runtimeConfig = useRuntimeConfig()
@@ -41,741 +23,407 @@ const apiUrl = runtimeConfig.public.postgrestUrl as string
 const client = new PostgrestClient(apiUrl)
 
 const loading = ref(false)
-const loadingStats = ref(true)
-const page = ref(1)
+const searched = ref(false)
+const showFilters = ref(false)
+const searchQuery = ref('')
 const candidatos = ref<Candidato[]>([])
 const error = ref('')
-
-const stats = reactive({
-  byYear: [] as YearStats[],
-  topCandidatos: [] as Candidato[],
-  topPartidos: [] as Partido[],
-  byUF: [] as UFStats[],
-})
-
-const pagination = ref({ total: 0, pages: 0, page: 1, limit: 50 })
+const cidades = ref<string[]>([])
+const loadingCidades = ref(false)
 
 const filters = reactive({
-  candidato: '',
-  partido: null as string | null,
   uf: null as string | null,
-  municipio: '',
   ano: null as number | null,
-  cargo: null as string | null,
-  turno: null as number | null,
+  cidade: null as string | null,
 })
 
-const headers = [
-  { title: 'Candidato', key: 'nm_urna_candidato' },
-  { title: 'Partido', key: 'sg_partido' },
-  { title: 'Cargo', key: 'ds_cargo' },
-  { title: 'Ano', key: 'ano_eleicao' },
-  { title: 'UF', key: 'sg_uf' },
-  { title: 'Município', key: 'nm_municipio' },
-  { title: 'Turno', key: 'nr_turno' },
-  { title: 'Total Votos', key: 'qt_votos_nominais' },
-  { title: 'Situação', key: 'ds_sit_tot_turno' },
-]
+// Eleições municipais são 2020 e 2024
+const isEleicaoMunicipal = computed(() => filters.ano === 2020 || filters.ano === 2024)
 
-const estados = [
-  'AC',
-  'AL',
-  'AP',
-  'AM',
-  'BA',
-  'CE',
-  'DF',
-  'ES',
-  'GO',
-  'MA',
-  'MT',
-  'MS',
-  'MG',
-  'PA',
-  'PB',
-  'PR',
-  'PE',
-  'PI',
-  'RJ',
-  'RN',
-  'RS',
-  'RO',
-  'RR',
-  'SC',
-  'SP',
-  'SE',
-  'TO',
-]
+// Mostrar campo de cidade: precisa ter UF selecionada e ser eleição municipal
+const showCidadeFilter = computed(() => filters.uf !== null && isEleicaoMunicipal.value)
 
-const partidos = [
-  'PT',
-  'PL',
-  'PP',
-  'MDB',
-  'PSDB',
-  'UNIÃO',
-  'PDT',
-  'PSB',
-  'PSD',
-  'REPUBLICANOS',
-  'PODE',
-  'NOVO',
-  'PSOL',
-  'PCdoB',
-  'CIDADANIA',
-  'SOLIDARIEDADE',
-  'AVANTE',
-  'PRD',
-  'REDE',
-  'DC',
-  'PMN',
-  'AGIR',
-  'PCB',
-  'PSTU',
-  'PCO',
-  'UP',
-]
+// Carregar cidades quando UF mudar
+watch(() => filters.uf, async (novaUf) => {
+  filters.cidade = null
+  cidades.value = []
 
-const cargos = [
-  'PRESIDENTE',
-  'GOVERNADOR',
-  'SENADOR',
-  'DEPUTADO FEDERAL',
-  'DEPUTADO ESTADUAL',
-  'PREFEITO',
-  'VEREADOR',
-]
+  if (!novaUf || !isEleicaoMunicipal.value)
+    return
 
-// Load initial stats via PostgREST
-onMounted(async () => {
+  loadingCidades.value = true
   try {
-    loadingStats.value = true
-
-    // Top Candidatos
-    const { data: topCandidatos, error: errTop } = await client
+    const { data } = await client
       .from('votacao_candidato_munzona')
-      .select('nm_candidato, nm_urna_candidato, sg_partido, ds_cargo, ano_eleicao, sg_uf, qt_votos_nominais, ds_sit_tot_turno')
-      .eq('nr_turno', 1)
-      .order('qt_votos_nominais', { ascending: false })
-      .limit(10)
+      .select('nm_municipio')
+      .eq('sg_uf', novaUf)
+      .eq('ano_eleicao', filters.ano!)
+      .order('nm_municipio')
 
-    if (errTop)
-      throw errTop
-    stats.topCandidatos = (topCandidatos as Candidato[]) || []
-
-    // Busca dados para agregação - limitado para performance
-    const { data: allData, error: errAll } = await client
-      .from('votacao_candidato_munzona')
-      .select('ano_eleicao, sq_candidato, nm_municipio, sg_partido, sg_uf, nm_partido, qt_votos_nominais')
-      .limit(10000)
-
-    if (errAll)
-      throw errAll
-
-    // Agrega por ano
-    const yearMap = new Map<number, { candidatos: Set<string>, municipios: Set<string>, partidos: Set<string>, votos: number }>()
-    const partidoMap = new Map<string, { nm_partido: string, votos: number, candidatos: Set<string> }>()
-    const ufMap = new Map<string, { candidatos: Set<string>, votos: number }>()
-
-    allData?.forEach((row: Record<string, unknown>) => {
-      const anoEleicao = row.ano_eleicao as number
-      const sqCandidato = row.sq_candidato as string
-      const nmMunicipio = row.nm_municipio as string
-      const sgPartido = row.sg_partido as string
-      const sgUf = row.sg_uf as string
-      const nmPartido = row.nm_partido as string
-      const qtVotos = Number(row.qt_votos_nominais) || 0
-
-      // Por ano
-      if (!yearMap.has(anoEleicao)) {
-        yearMap.set(anoEleicao, { candidatos: new Set(), municipios: new Set(), partidos: new Set(), votos: 0 })
-      }
-      const y = yearMap.get(anoEleicao)!
-      y.candidatos.add(sqCandidato)
-      y.municipios.add(nmMunicipio)
-      y.partidos.add(sgPartido)
-      y.votos += qtVotos
-
-      // Por partido
-      if (!partidoMap.has(sgPartido)) {
-        partidoMap.set(sgPartido, { nm_partido: nmPartido, votos: 0, candidatos: new Set() })
-      }
-      const p = partidoMap.get(sgPartido)!
-      p.votos += qtVotos
-      p.candidatos.add(sqCandidato)
-
-      // Por UF
-      if (!ufMap.has(sgUf)) {
-        ufMap.set(sgUf, { candidatos: new Set(), votos: 0 })
-      }
-      const u = ufMap.get(sgUf)!
-      u.candidatos.add(sqCandidato)
-      u.votos += qtVotos
-    })
-
-    stats.byYear = Array.from(yearMap.entries())
-      .map(([ano, d]) => ({
-        ano_eleicao: ano,
-        total_candidatos: d.candidatos.size,
-        total_municipios: d.municipios.size,
-        total_partidos: d.partidos.size,
-        total_votos: d.votos,
-      }))
-      .sort((a, b) => b.ano_eleicao - a.ano_eleicao)
-
-    stats.topPartidos = Array.from(partidoMap.entries())
-      .map(([sg, d]) => ({
-        sg_partido: sg,
-        nm_partido: d.nm_partido,
-        total_votos: d.votos,
-        total_candidatos: d.candidatos.size,
-      }))
-      .sort((a, b) => b.total_votos - a.total_votos)
-      .slice(0, 10)
-
-    stats.byUF = Array.from(ufMap.entries())
-      .map(([uf, d]) => ({
-        sg_uf: uf,
-        total_candidatos: d.candidatos.size,
-        total_votos: d.votos,
-      }))
-      .sort((a, b) => b.total_votos - a.total_votos)
+    // Remover duplicatas
+    const uniqueCidades = [...new Set((data || []).map((d: { nm_municipio: string }) => d.nm_municipio))]
+    cidades.value = uniqueCidades.filter(Boolean) as string[]
   }
-  catch (e: unknown) {
-    const err = e as Error
-    console.error('Error loading stats:', err)
-    error.value = `Erro ao carregar estatísticas: ${err.message || err}`
+  catch (e) {
+    console.error('Erro ao carregar cidades:', e)
   }
   finally {
-    loadingStats.value = false
+    loadingCidades.value = false
   }
 })
 
-async function searchCandidatos(): Promise<void> {
+// Recarregar cidades quando ano mudar (se UF já estiver selecionada)
+watch(() => filters.ano, async (novoAno) => {
+  if (!filters.uf)
+    return
+  filters.cidade = null
+  cidades.value = []
+
+  if (!novoAno || (novoAno !== 2020 && novoAno !== 2024))
+    return
+
+  loadingCidades.value = true
+  try {
+    const { data } = await client
+      .from('votacao_candidato_munzona')
+      .select('nm_municipio')
+      .eq('sg_uf', filters.uf)
+      .eq('ano_eleicao', novoAno)
+      .order('nm_municipio')
+
+    const uniqueCidades = [...new Set((data || []).map((d: { nm_municipio: string }) => d.nm_municipio))]
+    cidades.value = uniqueCidades.filter(Boolean) as string[]
+  }
+  catch (e) {
+    console.error('Erro ao carregar cidades:', e)
+  }
+  finally {
+    loadingCidades.value = false
+  }
+})
+
+// Chips de filtros ativos
+const activeFilters = computed(() => {
+  const chips: { label: string, clear: () => void }[] = []
+  if (filters.uf) {
+    chips.push({ label: filters.uf, clear: () => filters.uf = null })
+  }
+  if (filters.ano) {
+    chips.push({ label: String(filters.ano), clear: () => filters.ano = null })
+  }
+  if (filters.cidade) {
+    chips.push({ label: filters.cidade, clear: () => filters.cidade = null })
+  }
+  return chips
+})
+
+// Validação: requer pelo menos 3 caracteres OU filtros selecionados
+const canSearch = computed(() => {
+  const hasQuery = searchQuery.value.trim().length >= 3
+  const hasFilters = filters.uf !== null || filters.ano !== null || filters.cidade !== null
+  return hasQuery || hasFilters
+})
+
+async function search(): Promise<void> {
+  if (!canSearch.value)
+    return
+
   loading.value = true
+  searched.value = true
   error.value = ''
+  showFilters.value = false
 
   try {
-    const limit = 50
-    const offset = (page.value - 1) * limit
+    // Usa view materializada mv_votos_candidato para buscas mais rápidas
+    // Se não existir, cai para a tabela original
+    const useAggregatedView = true
+    const tableName = useAggregatedView ? 'mv_votos_candidato' : 'votacao_candidato_munzona'
+    const votosField = useAggregatedView ? 'total_votos' : 'qt_votos_nominais'
 
     let query = client
-      .from('votacao_candidato_munzona')
-      .select('*', { count: 'exact' })
+      .from(tableName)
+      .select(`nm_candidato, nm_urna_candidato, sg_partido, ds_cargo, ano_eleicao, sg_uf, ${votosField}, ds_sit_tot_turno, nr_turno`)
 
-    if (filters.candidato) {
-      query = query.ilike('nm_candidato', `%${filters.candidato}%`)
+    // Busca por nome (apenas se tiver termo)
+    const term = searchQuery.value.trim()
+    if (term.length >= 3) {
+      query = query.ilike('nm_candidato', `%${term}%`)
     }
-    if (filters.partido) {
-      query = query.eq('sg_partido', filters.partido.toUpperCase())
-    }
+
     if (filters.uf) {
-      query = query.eq('sg_uf', filters.uf.toUpperCase())
-    }
-    if (filters.municipio) {
-      query = query.ilike('nm_municipio', `%${filters.municipio}%`)
+      query = query.eq('sg_uf', filters.uf)
     }
     if (filters.ano) {
       query = query.eq('ano_eleicao', filters.ano)
     }
-    if (filters.cargo) {
-      query = query.ilike('ds_cargo', `%${filters.cargo}%`)
-    }
-    if (filters.turno) {
-      query = query.eq('nr_turno', filters.turno)
-    }
 
     query = query
-      .order('qt_votos_nominais', { ascending: false })
-      .range(offset, offset + limit - 1)
+      .order(votosField, { ascending: false })
+      .limit(50)
 
-    const { data, error: err, count } = await query
+    const { data, error: err } = await query
 
     if (err)
       throw err
 
-    candidatos.value = (data as Candidato[]) || []
-    pagination.value = {
-      total: count || 0,
-      pages: Math.ceil((count || 0) / limit),
-      page: page.value,
-      limit,
-    }
+    // Normaliza o campo de votos
+    candidatos.value = ((data || []) as Record<string, unknown>[]).map(d => ({
+      ...d,
+      qt_votos_nominais: (d.total_votos ?? d.qt_votos_nominais) as number,
+    })) as Candidato[]
   }
   catch (e: unknown) {
     const err = e as Error
-    console.error('Error searching:', err)
-    error.value = `Erro na busca: ${err.message || err}`
+    error.value = err.message || 'Erro na busca'
   }
   finally {
     loading.value = false
   }
 }
 
-function clearFilters(): void {
-  filters.candidato = ''
-  filters.partido = null
+function clearAll(): void {
+  searchQuery.value = ''
   filters.uf = null
-  filters.municipio = ''
   filters.ano = null
-  filters.cargo = null
-  filters.turno = null
+  filters.cidade = null
+  cidades.value = []
   candidatos.value = []
-  page.value = 1
+  searched.value = false
+  error.value = ''
 }
 
-function formatNumber(num: number | string): string {
-  return Number(num).toLocaleString('pt-BR')
-}
-
-function formatCompact(num: number): string {
-  if (num >= 1_000_000_000)
-    return `${(num / 1_000_000_000).toFixed(1)}B`
+function formatNumber(num: number): string {
   if (num >= 1_000_000)
     return `${(num / 1_000_000).toFixed(1)}M`
   if (num >= 1_000)
     return `${(num / 1_000).toFixed(1)}K`
-  return String(num)
+  return num.toLocaleString('pt-BR')
 }
 
 function getSituacaoColor(situacao: string): string {
   if (!situacao)
     return 'grey'
   const s = situacao.toUpperCase()
-  if (s.includes('ELEITO') || s.includes('ELEITA'))
+  if (s.includes('ELEITO'))
     return 'success'
   if (s.includes('NÃO ELEITO'))
     return 'error'
   if (s.includes('2º TURNO'))
     return 'warning'
-  if (s.includes('SUPLENTE'))
-    return 'info'
   return 'grey'
-}
-
-function getPartidoColor(sigla: string): string {
-  const colors: Record<string, string> = {
-    PT: '#CC0000',
-    PL: '#003399',
-    PSDB: '#0066CC',
-    MDB: '#00CC00',
-    PP: '#003366',
-    PDT: '#FF6600',
-    PSB: '#FFCC00',
-    UNIÃO: '#336699',
-    PSOL: '#990066',
-    NOVO: '#FF6600',
-    PSD: '#006633',
-  }
-  return colors[sigla] || '#666666'
 }
 </script>
 
 <template>
-  <v-container fluid class="pa-6">
-    <!-- Header -->
-    <v-row class="mb-6">
-      <v-col cols="12">
-        <div class="d-flex align-center justify-space-between flex-wrap">
-          <div>
-            <h1 class="text-h3 font-weight-bold text-primary">
-              <v-icon size="40" class="mr-3">
-                mdi-vote
-              </v-icon>
-              Análise Política Brasil
-            </h1>
-            <p class="text-subtitle-1 text-medium-emphasis mt-2">
-              Ferramenta de análise de dados eleitorais via PostgREST
-            </p>
-            <v-chip color="success" size="small" class="mt-2">
-              <v-icon size="small" class="mr-1">
-                mdi-api
-              </v-icon>
-              API: {{ apiUrl }}
-            </v-chip>
-          </div>
-          <v-chip-group>
-            <v-chip color="primary" variant="elevated">
-              2018 - Gerais
-            </v-chip>
-            <v-chip color="secondary" variant="elevated">
-              2020 - Municipais
-            </v-chip>
-            <v-chip color="primary" variant="elevated">
-              2022 - Gerais
-            </v-chip>
-            <v-chip color="secondary" variant="elevated">
-              2024 - Municipais
-            </v-chip>
-          </v-chip-group>
-        </div>
-      </v-col>
-    </v-row>
-
-    <!-- Loading Stats -->
-    <v-row v-if="loadingStats" class="mb-6">
-      <v-col cols="12" class="text-center">
-        <v-progress-circular indeterminate color="primary" size="60" />
-        <p class="mt-4 text-medium-emphasis">
-          Carregando estatísticas...
-        </p>
-      </v-col>
-    </v-row>
-
-    <!-- Stats Cards -->
-    <v-row v-if="stats.byYear.length > 0" class="mb-6">
-      <v-col v-for="yearData in stats.byYear" :key="yearData.ano_eleicao" cols="12" sm="6" md="3">
-        <v-card
-          :color="yearData.ano_eleicao % 4 === 0 ? 'secondary' : 'primary'"
-          class="elevation-8 rounded-xl"
-        >
-          <v-card-text class="text-center text-white pa-6">
-            <div class="d-flex align-center justify-center mb-3">
-              <v-icon size="32" class="mr-2">
-                {{ yearData.ano_eleicao % 4 === 0 ? 'mdi-city' : 'mdi-domain' }}
-              </v-icon>
-              <span class="text-h4 font-weight-bold">{{ yearData.ano_eleicao }}</span>
-            </div>
-            <v-chip color="white" text-color="primary" class="mb-3" size="small">
-              {{ yearData.ano_eleicao % 4 === 0 ? 'Municipais' : 'Gerais' }}
-            </v-chip>
-            <div class="text-h5 font-weight-bold">
-              {{ formatNumber(yearData.total_votos) }}
-            </div>
-            <div class="text-caption">
-              votos registrados
-            </div>
-            <v-divider class="my-3 opacity-50" />
-            <div class="d-flex justify-space-around text-caption">
-              <div>
-                <strong>{{ formatNumber(yearData.total_candidatos) }}</strong><br>
-                candidatos
-              </div>
-              <div>
-                <strong>{{ formatNumber(yearData.total_municipios) }}</strong><br>
-                municípios
-              </div>
-              <div>
-                <strong>{{ yearData.total_partidos }}</strong><br>
-                partidos
-              </div>
-            </div>
-          </v-card-text>
-        </v-card>
-      </v-col>
-    </v-row>
-
-    <!-- Search & Filters -->
-    <v-card class="mb-6 rounded-xl elevation-4">
-      <v-card-title class="bg-primary text-white py-4">
-        <v-icon class="mr-2">
-          mdi-magnify
-        </v-icon>
-        Buscar Candidatos
-      </v-card-title>
-      <v-card-text class="pa-6">
-        <v-row>
-          <v-col cols="12" md="4">
-            <v-text-field
-              v-model="filters.candidato"
-              label="Nome do Candidato"
-              prepend-inner-icon="mdi-account-search"
-              variant="outlined"
-              density="comfortable"
-              clearable
-              @keyup.enter="searchCandidatos"
-            />
-          </v-col>
-          <v-col cols="12" md="2">
-            <v-select
-              v-model="filters.partido"
-              :items="partidos"
-              label="Partido"
-              prepend-inner-icon="mdi-flag"
-              variant="outlined"
-              density="comfortable"
-              clearable
-            />
-          </v-col>
-          <v-col cols="12" md="2">
-            <v-select
-              v-model="filters.uf"
-              :items="estados"
-              label="Estado (UF)"
-              prepend-inner-icon="mdi-map-marker"
-              variant="outlined"
-              density="comfortable"
-              clearable
-            />
-          </v-col>
-          <v-col cols="12" md="2">
-            <v-select
-              v-model="filters.ano"
-              :items="[2024, 2022, 2020, 2018]"
-              label="Ano"
-              prepend-inner-icon="mdi-calendar"
-              variant="outlined"
-              density="comfortable"
-              clearable
-            />
-          </v-col>
-          <v-col cols="12" md="2">
-            <v-select
-              v-model="filters.cargo"
-              :items="cargos"
-              label="Cargo"
-              prepend-inner-icon="mdi-briefcase"
-              variant="outlined"
-              density="comfortable"
-              clearable
-            />
-          </v-col>
-        </v-row>
-        <v-row>
-          <v-col cols="12" md="4">
-            <v-text-field
-              v-model="filters.municipio"
-              label="Município"
-              prepend-inner-icon="mdi-city-variant"
-              variant="outlined"
-              density="comfortable"
-              clearable
-            />
-          </v-col>
-          <v-col cols="12" md="2">
-            <v-select
-              v-model="filters.turno"
-              :items="[{ title: '1º Turno', value: 1 }, { title: '2º Turno', value: 2 }]"
-              label="Turno"
-              prepend-inner-icon="mdi-numeric"
-              variant="outlined"
-              density="comfortable"
-              clearable
-            />
-          </v-col>
-          <v-col cols="12" md="6" class="d-flex align-center">
-            <v-btn
-              color="primary"
-              size="large"
-              :loading="loading"
-              class="mr-4"
-              @click="searchCandidatos"
-            >
-              <v-icon class="mr-2">
-                mdi-magnify
-              </v-icon>
-              Buscar
-            </v-btn>
-            <v-btn
-              variant="outlined"
-              size="large"
-              @click="clearFilters"
-            >
-              <v-icon class="mr-2">
-                mdi-filter-off
-              </v-icon>
-              Limpar Filtros
-            </v-btn>
-          </v-col>
-        </v-row>
-      </v-card-text>
-    </v-card>
-
-    <!-- Results Table -->
-    <v-card v-if="candidatos.length > 0" class="rounded-xl elevation-4 mb-6">
-      <v-card-title class="bg-secondary text-white py-4 d-flex justify-space-between">
-        <div>
-          <v-icon class="mr-2">
-            mdi-table
-          </v-icon>
-          Resultados
-        </div>
-        <v-chip color="white" text-color="secondary">
-          {{ formatNumber(pagination.total) }} registros encontrados
-        </v-chip>
-      </v-card-title>
-      <v-data-table
-        :headers="headers"
-        :items="candidatos"
-        :loading="loading"
-        :items-per-page="50"
-        class="elevation-0"
+  <v-container fluid class="pa-0">
+    <!-- Search Bar fixo no topo -->
+    <v-app-bar flat color="surface" class="px-2">
+      <v-text-field
+        v-model="searchQuery"
+        placeholder="Buscar candidato ou cidade..."
+        prepend-inner-icon="mdi-magnify"
+        variant="solo-filled"
+        flat
+        density="comfortable"
+        hide-details
+        single-line
+        rounded
+        class="flex-grow-1"
+        @keyup.enter="search"
       >
-        <template #[`item.qt_votos_nominais`]="{ item }">
-          <v-chip color="success" variant="elevated" size="small">
-            <v-icon size="small" class="mr-1">
-              mdi-vote
-            </v-icon>
-            {{ formatNumber(item.qt_votos_nominais) }}
-          </v-chip>
-        </template>
-
-        <template #[`item.ds_sit_tot_turno`]="{ item }">
-          <v-chip
-            :color="getSituacaoColor(item.ds_sit_tot_turno)"
+        <template #append-inner>
+          <v-btn
+            v-if="searchQuery"
+            icon="mdi-close"
             size="small"
-            variant="elevated"
-          >
-            {{ item.ds_sit_tot_turno }}
-          </v-chip>
+            variant="text"
+            @click="clearAll"
+          />
         </template>
+      </v-text-field>
 
-        <template #[`item.ano_eleicao`]="{ item }">
-          <v-chip
-            :color="item.ano_eleicao % 4 === 0 ? 'secondary' : 'primary'"
-            size="small"
+      <v-btn
+        icon
+        variant="text"
+        class="ml-2"
+        @click="showFilters = !showFilters"
+      >
+        <v-badge
+          v-if="activeFilters.length > 0"
+          :content="activeFilters.length"
+          color="primary"
+        >
+          <v-icon>mdi-filter-variant</v-icon>
+        </v-badge>
+        <v-icon v-else>
+          mdi-filter-variant
+        </v-icon>
+      </v-btn>
+    </v-app-bar>
+
+    <!-- Filtros em Bottom Sheet -->
+    <v-bottom-sheet v-model="showFilters" inset>
+      <v-card class="rounded-t-xl">
+        <v-card-title class="d-flex justify-space-between align-center">
+          <span>Filtros</span>
+          <v-btn icon="mdi-close" variant="text" @click="showFilters = false" />
+        </v-card-title>
+
+        <v-card-text>
+          <v-select
+            v-model="filters.ano"
+            :items="anosEleicao"
+            label="Ano da Eleição"
             variant="outlined"
+            density="comfortable"
+            clearable
+            hide-details
+            class="mb-4"
+          />
+
+          <v-select
+            v-model="filters.uf"
+            :items="estados"
+            label="Estado (UF)"
+            variant="outlined"
+            density="comfortable"
+            clearable
+            hide-details
+            class="mb-4"
+          />
+
+          <v-autocomplete
+            v-if="showCidadeFilter"
+            v-model="filters.cidade"
+            :items="cidades"
+            :loading="loadingCidades"
+            label="Cidade"
+            variant="outlined"
+            density="comfortable"
+            clearable
+            hide-details
+            no-data-text="Selecione um estado primeiro"
+          />
+        </v-card-text>
+
+        <v-card-actions class="pa-4">
+          <v-btn
+            variant="text"
+            @click="filters.uf = null; filters.ano = null; filters.cidade = null"
           >
-            {{ item.ano_eleicao }}
+            Limpar
+          </v-btn>
+          <v-spacer />
+          <v-btn
+            color="primary"
+            variant="elevated"
+            :disabled="!canSearch"
+            @click="search"
+          >
+            Aplicar
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-bottom-sheet>
+
+    <!-- Conteúdo principal -->
+    <v-main class="bg-grey-lighten-4">
+      <div class="pa-4">
+        <!-- Chips de filtros ativos -->
+        <div v-if="activeFilters.length > 0" class="mb-4">
+          <v-chip
+            v-for="(filter, i) in activeFilters"
+            :key="i"
+            closable
+            size="small"
+            class="mr-2"
+            @click:close="filter.clear(); search()"
+          >
+            {{ filter.label }}
           </v-chip>
-        </template>
+        </div>
 
-        <template #[`item.sg_partido`]="{ item }">
-          <v-chip color="info" size="small" variant="tonal">
-            {{ item.sg_partido }}
-          </v-chip>
-        </template>
-      </v-data-table>
+        <!-- Estado inicial -->
+        <div v-if="!searched && !loading" class="text-center py-16">
+          <v-icon size="64" color="grey-lighten-1" class="mb-4">
+            mdi-magnify
+          </v-icon>
+          <p class="text-body-1 text-medium-emphasis">
+            Digite o nome de um candidato ou cidade
+          </p>
+          <p class="text-caption text-medium-emphasis">
+            Mínimo 3 caracteres
+          </p>
+        </div>
 
-      <!-- Pagination -->
-      <v-card-actions class="pa-4">
-        <v-pagination
-          v-model="page"
-          :length="pagination.pages"
-          :total-visible="7"
-          @update:model-value="searchCandidatos"
-        />
-      </v-card-actions>
-    </v-card>
+        <!-- Loading -->
+        <div v-else-if="loading" class="text-center py-16">
+          <v-progress-circular indeterminate color="primary" size="48" />
+          <p class="mt-4 text-medium-emphasis">
+            Buscando...
+          </p>
+        </div>
 
-    <!-- Top Candidatos e Partidos -->
-    <v-row v-if="stats.topCandidatos.length > 0" class="mt-6">
-      <v-col cols="12" md="6">
-        <v-card class="rounded-xl elevation-4 h-100">
-          <v-card-title class="bg-gradient-primary text-white py-4">
-            <v-icon class="mr-2">
-              mdi-trophy
-            </v-icon>
-            Top 10 Candidatos Mais Votados
-          </v-card-title>
-          <v-list density="compact">
-            <v-list-item
-              v-for="(candidato, index) in stats.topCandidatos"
-              :key="index"
-              class="py-3"
-            >
-              <template #prepend>
-                <v-avatar
-                  :color="index < 3 ? 'amber' : 'grey-lighten-2'"
-                  size="36"
+        <!-- Sem resultados -->
+        <div v-else-if="searched && candidatos.length === 0" class="text-center py-16">
+          <v-icon size="64" color="grey-lighten-1" class="mb-4">
+            mdi-magnify-close
+          </v-icon>
+          <p class="text-body-1 text-medium-emphasis">
+            Nenhum resultado encontrado
+          </p>
+        </div>
+
+        <!-- Lista de resultados -->
+        <v-list v-else bg-color="transparent" class="pa-0">
+          <v-list-item
+            v-for="(candidato, index) in candidatos"
+            :key="index"
+            class="mb-2 rounded-lg bg-white"
+          >
+            <template #prepend>
+              <v-avatar color="primary" size="40">
+                <span class="text-caption font-weight-bold">
+                  {{ candidato.sg_partido?.slice(0, 2) }}
+                </span>
+              </v-avatar>
+            </template>
+
+            <v-list-item-title class="font-weight-medium">
+              {{ candidato.nm_urna_candidato || candidato.nm_candidato }}
+            </v-list-item-title>
+
+            <v-list-item-subtitle class="text-caption">
+              {{ candidato.sg_partido }} · {{ candidato.ds_cargo }}
+              <span v-if="candidato.nm_municipio"> · {{ candidato.nm_municipio }}</span>
+              - {{ candidato.sg_uf }}
+            </v-list-item-subtitle>
+
+            <template #append>
+              <div class="text-right">
+                <v-chip
+                  :color="getSituacaoColor(candidato.ds_sit_tot_turno)"
+                  size="x-small"
+                  class="mb-1"
                 >
-                  <span class="font-weight-bold">{{ index + 1 }}</span>
-                </v-avatar>
-              </template>
-              <v-list-item-title class="font-weight-bold">
-                {{ candidato.nm_urna_candidato || candidato.nm_candidato }}
-              </v-list-item-title>
-              <v-list-item-subtitle>
-                {{ candidato.sg_partido }} · {{ candidato.ds_cargo }} · {{ candidato.sg_uf }} · {{ candidato.ano_eleicao }}
-              </v-list-item-subtitle>
-              <template #append>
-                <v-chip color="success" size="small" variant="elevated">
+                  {{ candidato.ds_sit_tot_turno?.split(' ')[0] }}
+                </v-chip>
+                <div class="text-caption font-weight-bold">
                   {{ formatNumber(candidato.qt_votos_nominais) }} votos
-                </v-chip>
-              </template>
-            </v-list-item>
-          </v-list>
-        </v-card>
-      </v-col>
+                </div>
+                <div class="text-caption text-medium-emphasis">
+                  {{ candidato.ano_eleicao }}
+                </div>
+              </div>
+            </template>
+          </v-list-item>
+        </v-list>
 
-      <v-col cols="12" md="6">
-        <v-card class="rounded-xl elevation-4 h-100">
-          <v-card-title class="bg-gradient-secondary text-white py-4">
-            <v-icon class="mr-2">
-              mdi-flag
-            </v-icon>
-            Top 10 Partidos por Votos
-          </v-card-title>
-          <v-list density="compact">
-            <v-list-item
-              v-for="(partido, index) in stats.topPartidos"
-              :key="index"
-              class="py-3"
-            >
-              <template #prepend>
-                <v-avatar
-                  :color="getPartidoColor(partido.sg_partido)"
-                  size="36"
-                >
-                  <span class="font-weight-bold text-white text-caption">{{ partido.sg_partido }}</span>
-                </v-avatar>
-              </template>
-              <v-list-item-title class="font-weight-bold">
-                {{ partido.nm_partido }}
-              </v-list-item-title>
-              <v-list-item-subtitle>
-                {{ formatNumber(partido.total_candidatos) }} candidatos
-              </v-list-item-subtitle>
-              <template #append>
-                <v-chip color="primary" size="small" variant="elevated">
-                  {{ formatNumber(partido.total_votos) }} votos
-                </v-chip>
-              </template>
-            </v-list-item>
-          </v-list>
-        </v-card>
-      </v-col>
-    </v-row>
-
-    <!-- UF Stats -->
-    <v-row v-if="stats.byUF.length > 0" class="mt-6">
-      <v-col cols="12">
-        <v-card class="rounded-xl elevation-4">
-          <v-card-title class="bg-info text-white py-4">
-            <v-icon class="mr-2">
-              mdi-map
-            </v-icon>
-            Votos por Estado
-          </v-card-title>
-          <v-card-text class="pa-4">
-            <v-row>
-              <v-col
-                v-for="uf in stats.byUF.slice(0, 12)"
-                :key="uf.sg_uf"
-                cols="6"
-                sm="4"
-                md="2"
-              >
-                <v-card variant="outlined" class="text-center pa-3">
-                  <div class="text-h6 font-weight-bold text-primary">
-                    {{ uf.sg_uf }}
-                  </div>
-                  <div class="text-body-2">
-                    {{ formatCompact(uf.total_votos) }} votos
-                  </div>
-                  <div class="text-caption text-medium-emphasis">
-                    {{ formatNumber(uf.total_candidatos) }} candidatos
-                  </div>
-                </v-card>
-              </v-col>
-            </v-row>
-          </v-card-text>
-        </v-card>
-      </v-col>
-    </v-row>
-
-    <!-- Error Alert -->
-    <v-alert v-if="error" type="error" class="mt-4" closable @click:close="error = ''">
-      {{ error }}
-    </v-alert>
+        <!-- Error -->
+        <v-alert v-if="error" type="error" variant="tonal" class="mt-4" closable @click:close="error = ''">
+          {{ error }}
+        </v-alert>
+      </div>
+    </v-main>
   </v-container>
 </template>
-
-<style scoped>
-.bg-gradient-primary {
-  background: linear-gradient(135deg, #1976d2 0%, #1565c0 100%);
-}
-.bg-gradient-secondary {
-  background: linear-gradient(135deg, #7b1fa2 0%, #6a1b9a 100%);
-}
-</style>
