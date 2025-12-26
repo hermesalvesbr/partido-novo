@@ -1,318 +1,75 @@
 <script setup lang="ts">
-import { PostgrestClient } from '@supabase/postgrest-js'
+import { ANOS_ELEICAO, ESTADOS } from '~/data/eleicoes'
+import { formatNumber, formatSituacao, getSituacaoColor } from '~/utils/formatters'
 
-// Dados estáticos para filtros
-const anosEleicao = [2024, 2022, 2020, 2018]
-const estados = ['AC', 'AL', 'AM', 'AP', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MG', 'MS', 'MT', 'PA', 'PB', 'PE', 'PI', 'PR', 'RJ', 'RN', 'RO', 'RR', 'RS', 'SC', 'SE', 'SP', 'TO']
+// Composables para separação de responsabilidades
+const {
+  loading,
+  searched,
+  error,
+  candidatos,
+  searchQuery,
+  searchType,
+  filters,
+  isEleicaoMunicipal,
+  filterCount,
+  canSearch,
+  searchPlaceholder,
+  searchIcon,
+  search,
+  clearFilters,
+  setUf,
+} = useCandidatoSearch()
 
-interface GeoData {
-  city: string | null
-  region: string | null
-  regionCode: string | null
-  country: string | null
-  countryCode: string | null
-  ip: string
-  error?: string
-}
+const {
+  cidades,
+  loading: loadingCidades,
+  loadCidades,
+  clearCidades,
+} = useCidadesFilter()
 
-interface Candidato {
-  nm_candidato: string
-  nm_urna_candidato: string
-  sg_partido: string
-  ds_cargo: string
-  ano_eleicao: number
-  sg_uf: string
-  qt_votos_nominais: number
-  ds_sit_tot_turno: string
-  nm_municipio?: string
-  nr_turno?: number
-}
+const { estadoDetectado } = useGeolocalizacao()
 
-const runtimeConfig = useRuntimeConfig()
-const apiUrl = runtimeConfig.public.postgrestUrl as string
-const client = new PostgrestClient(apiUrl)
-
-const loading = ref(false)
-const searched = ref(false)
+// Estado local do componente (apenas UI)
 const showFilters = ref(false)
-const searchQuery = ref('')
-const candidatos = ref<Candidato[]>([])
-const error = ref('')
-const cidades = ref<string[]>([])
-const loadingCidades = ref(false)
 
-// Tipo de busca: candidato ou cidade
-const searchType = ref<'candidato' | 'cidade'>('candidato')
-
-const filters = reactive({
-  uf: null as string | null,
-  ano: null as number | null,
-  cidade: null as string | null,
-})
-
-// Placeholder e ícone dinâmicos baseados no tipo de busca
-const searchPlaceholder = computed(() =>
-  searchType.value === 'candidato'
-    ? 'Buscar nome do candidato...'
-    : 'Buscar nome da cidade...',
-)
-const searchIcon = computed(() =>
-  searchType.value === 'candidato'
-    ? 'mdi-account-search'
-    : 'mdi-city-variant',
-)
-
-// Busca geolocalização do usuário via IP (Nuxt 4 useAsyncData)
-const { data: geoData } = await useAsyncData<GeoData>('user-geo', () => $fetch('/api/geo'), {
-  server: true, // Executa no servidor para pegar IP real
-  lazy: false,
-})
-
-// Preenche o filtro de estado automaticamente baseado na geolocalização
-watchEffect(() => {
-  if (geoData.value?.regionCode && estados.includes(geoData.value.regionCode)) {
-    // Só preenche se o filtro ainda não foi modificado pelo usuário
-    if (filters.uf === null) {
-      filters.uf = geoData.value.regionCode
-    }
-  }
-})
-
-// Eleições municipais são 2020 e 2024
-const isEleicaoMunicipal = computed(() => filters.ano === 2020 || filters.ano === 2024)
-
-// Mostrar campo de cidade: precisa ter UF selecionada e ser eleição municipal
+// Computed: Mostrar filtro de cidade
 const showCidadeFilter = computed(() => filters.uf !== null && isEleicaoMunicipal.value)
 
-// Carregar cidades quando UF mudar
-watch(() => filters.uf, async (novaUf) => {
-  filters.cidade = null
-  cidades.value = []
-
-  if (!novaUf || !isEleicaoMunicipal.value)
-    return
-
-  loadingCidades.value = true
-  try {
-    const { data } = await client
-      .from('votacao_candidato_munzona')
-      .select('nm_municipio')
-      .eq('sg_uf', novaUf)
-      .eq('ano_eleicao', filters.ano!)
-      .order('nm_municipio')
-
-    // Remover duplicatas
-    const uniqueCidades = [...new Set((data || []).map((d: { nm_municipio: string }) => d.nm_municipio))]
-    cidades.value = uniqueCidades.filter(Boolean) as string[]
-  }
-  catch (e) {
-    console.error('Erro ao carregar cidades:', e)
-  }
-  finally {
-    loadingCidades.value = false
+// Auto-preencher UF baseado na geolocalização
+watchEffect(() => {
+  if (estadoDetectado.value && filters.uf === null) {
+    setUf(estadoDetectado.value)
   }
 })
 
-// Recarregar cidades quando ano mudar (se UF já estiver selecionada)
-watch(() => filters.ano, async (novoAno) => {
-  if (!filters.uf)
-    return
-  filters.cidade = null
-  cidades.value = []
+// Carregar cidades quando UF ou ano mudar
+watch(
+  () => [filters.uf, filters.ano] as const,
+  async ([uf, ano]) => {
+    filters.cidade = null
 
-  if (!novoAno || (novoAno !== 2020 && novoAno !== 2024))
-    return
+    if (!uf || !ano || (ano !== 2020 && ano !== 2024)) {
+      clearCidades()
+      return
+    }
 
-  loadingCidades.value = true
-  try {
-    const { data } = await client
-      .from('votacao_candidato_munzona')
-      .select('nm_municipio')
-      .eq('sg_uf', filters.uf)
-      .eq('ano_eleicao', novoAno)
-      .order('nm_municipio')
+    await loadCidades(uf, ano)
+  },
+)
 
-    const uniqueCidades = [...new Set((data || []).map((d: { nm_municipio: string }) => d.nm_municipio))]
-    cidades.value = uniqueCidades.filter(Boolean) as string[]
-  }
-  catch (e) {
-    console.error('Erro ao carregar cidades:', e)
-  }
-  finally {
-    loadingCidades.value = false
-  }
-})
-
-// Contagem de filtros ativos para o badge
-const filterCount = computed(() => {
-  let count = 0
-  if (filters.uf)
-    count++
-  if (filters.ano)
-    count++
-  if (filters.cidade)
-    count++
-  return count
-})
-
-// Validação: requer pelo menos 3 caracteres OU filtros selecionados
-// Para busca por cidade, UF é obrigatória
-const canSearch = computed(() => {
-  const hasQuery = searchQuery.value.trim().length >= 3
-  const hasFilters = filters.uf !== null || filters.ano !== null || filters.cidade !== null
-
-  // Busca por cidade exige UF
-  if (searchType.value === 'cidade' && !filters.uf) {
-    return false
-  }
-
-  return hasQuery || hasFilters
-})
-
-async function search(): Promise<void> {
-  if (!canSearch.value)
-    return
-
-  loading.value = true
-  searched.value = true
-  error.value = ''
+// Handlers de UI
+function handleSearch(): void {
   showFilters.value = false
-
-  try {
-    // Ambas as buscas usam a tabela base que tem índice GIN trigram
-    // A view materializada não tem índice GIN, então ILIKE %termo% é lento
-    const tableName = 'votacao_candidato_munzona'
-    const votosField = 'qt_votos_nominais'
-
-    // Campos para busca
-    const selectFields = `nm_candidato, nm_urna_candidato, sg_partido, ds_cargo, ano_eleicao, sg_uf, ${votosField}, ds_sit_tot_turno, nr_turno, nm_municipio`
-
-    let query = client
-      .from(tableName)
-      .select(selectFields)
-
-    // Busca por nome do candidato ou cidade dependendo do tipo
-    const term = searchQuery.value.trim()
-    if (term.length >= 3) {
-      // Substitui espaços por % para busca mais flexível (encontra "NUNES RAFAEL" com "nunes rafael")
-      const termPattern = `%${term.replace(/\s+/g, '%')}%`
-
-      if (searchType.value === 'candidato') {
-        // Busca pelo nome de urna (mais comum para usuários)
-        query = query.ilike('nm_urna_candidato', termPattern)
-      }
-      else {
-        // Busca por cidade - UF é obrigatória (já validado em canSearch)
-        query = query.ilike('nm_municipio', termPattern)
-      }
-    }
-
-    // Filtros de UF e Ano aplicados para ambos os tipos de busca
-    if (filters.uf) {
-      query = query.eq('sg_uf', filters.uf)
-    }
-    if (filters.ano) {
-      query = query.eq('ano_eleicao', filters.ano)
-    }
-
-    query = query
-      .order(votosField, { ascending: false })
-      .limit(500) // Busca mais registros para agregar depois
-
-    const { data, error: err } = await query
-
-    if (err)
-      throw err
-
-    // Agrupa resultados por candidato + ano + cargo + UF (soma votos por zona/município)
-    const rawData = (data || []) as unknown as Record<string, unknown>[]
-
-    if (searchType.value === 'candidato') {
-      // Agrupar por candidato/ano/cargo/uf para somar votos
-      const grouped = new Map<string, Candidato>()
-
-      for (const d of rawData) {
-        // Usa nm_urna_candidato como chave principal (é o nome que o usuário busca)
-        const key = `${d.nm_urna_candidato}-${d.ano_eleicao}-${d.ds_cargo}-${d.sg_uf}-${d.nr_turno}`
-        const existing = grouped.get(key)
-
-        if (existing) {
-          existing.qt_votos_nominais += (d.qt_votos_nominais as number) || 0
-        }
-        else {
-          grouped.set(key, {
-            nm_candidato: d.nm_candidato as string,
-            nm_urna_candidato: d.nm_urna_candidato as string,
-            sg_partido: d.sg_partido as string,
-            ds_cargo: d.ds_cargo as string,
-            ano_eleicao: d.ano_eleicao as number,
-            sg_uf: d.sg_uf as string,
-            qt_votos_nominais: (d.qt_votos_nominais as number) || 0,
-            ds_sit_tot_turno: d.ds_sit_tot_turno as string,
-            nr_turno: d.nr_turno as number,
-          })
-        }
-      }
-
-      // Ordena por votos e limita
-      candidatos.value = Array.from(grouped.values())
-        .sort((a, b) => b.qt_votos_nominais - a.qt_votos_nominais)
-        .slice(0, 50)
-    }
-    else {
-      // Busca por cidade: mantém registros individuais
-      candidatos.value = rawData.map(d => ({
-        ...d,
-        qt_votos_nominais: (d.qt_votos_nominais as number) || 0,
-      })) as Candidato[]
-    }
-  }
-  catch (e: unknown) {
-    const err = e as Error
-    error.value = err.message || 'Erro na busca'
-  }
-  finally {
-    loading.value = false
-  }
+  search()
 }
 
-function formatNumber(num: number): string {
-  if (num >= 1_000_000)
-    return `${(num / 1_000_000).toFixed(1)}M`
-  if (num >= 1_000)
-    return `${(num / 1_000).toFixed(1)}K`
-  return num.toLocaleString('pt-BR')
+function handleClearFilters(): void {
+  clearFilters()
 }
 
-function getSituacaoColor(situacao: string): string {
-  if (!situacao)
-    return 'grey'
-  const s = situacao.toUpperCase()
-  // Verificar NÃO ELEITO primeiro (contém "ELEITO" também)
-  if (s.includes('NÃO ELEITO'))
-    return 'error'
-  if (s.includes('SUPLENTE'))
-    return 'grey'
-  if (s.includes('2º TURNO'))
-    return 'warning'
-  if (s.includes('ELEITO'))
-    return 'success'
-  return 'grey'
-}
-
-function formatSituacao(situacao: string): string {
-  if (!situacao)
-    return '—'
-  const s = situacao.toUpperCase()
-  if (s.includes('NÃO ELEITO'))
-    return '' // Não mostra nada para não eleito
-  if (s.includes('SUPLENTE'))
-    return 'SUPLENTE'
-  if (s.includes('2º TURNO'))
-    return '2º TURNO'
-  if (s.includes('ELEITO'))
-    return 'ELEITO'
-  return ''
+function handleClearSearch(): void {
+  searchQuery.value = ''
 }
 </script>
 
@@ -360,7 +117,7 @@ function formatSituacao(situacao: string): string {
           rounded
           class="flex-grow-1"
           :disabled="searchType === 'cidade' && !filters.uf"
-          @keyup.enter="search"
+          @keyup.enter="handleSearch"
         >
           <template #append-inner>
             <!-- Chips de filtros dentro da busca -->
@@ -398,7 +155,7 @@ function formatSituacao(situacao: string): string {
                 icon="mdi-close"
                 size="x-small"
                 variant="text"
-                @click="searchQuery = ''"
+                @click="handleClearSearch"
               />
             </div>
           </template>
@@ -434,7 +191,7 @@ function formatSituacao(situacao: string): string {
         <v-card-text>
           <v-select
             v-model="filters.ano"
-            :items="anosEleicao"
+            :items="ANOS_ELEICAO"
             label="Ano da Eleição"
             variant="outlined"
             density="comfortable"
@@ -445,7 +202,7 @@ function formatSituacao(situacao: string): string {
 
           <v-select
             v-model="filters.uf"
-            :items="estados"
+            :items="ESTADOS"
             label="Estado (UF)"
             variant="outlined"
             density="comfortable"
@@ -471,7 +228,7 @@ function formatSituacao(situacao: string): string {
         <v-card-actions class="pa-4">
           <v-btn
             variant="text"
-            @click="searchType === 'candidato' ? (filters.uf = null, filters.ano = null, filters.cidade = null) : (filters.ano = null, filters.cidade = null)"
+            @click="handleClearFilters"
           >
             Limpar
           </v-btn>
@@ -480,7 +237,7 @@ function formatSituacao(situacao: string): string {
             color="primary"
             variant="elevated"
             :disabled="!canSearch"
-            @click="search"
+            @click="handleSearch"
           >
             Aplicar
           </v-btn>
@@ -575,7 +332,7 @@ function formatSituacao(situacao: string): string {
       </div>
 
       <!-- Error -->
-      <v-alert v-if="error" type="error" variant="tonal" class="mt-4" closable @click:close="error = ''">
+      <v-alert v-if="error" type="error" variant="tonal" class="mt-4" closable>
         {{ error }}
       </v-alert>
     </div>

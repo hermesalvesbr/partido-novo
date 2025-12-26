@@ -1,9 +1,6 @@
 <script setup lang="ts">
 const route = useRoute()
 
-// Estado do drawer para menu lateral (opcional em mobile)
-const drawer = ref(false)
-
 // Navegação bottom para mobile
 const navItems = [
   { title: 'Buscar', icon: 'mdi-magnify', to: '/' },
@@ -29,20 +26,9 @@ const activeNav = computed(() => {
       elevation="0"
       flat
     >
-      <!-- Logo à esquerda -->
+      <!-- Espaço para a logo floating -->
       <template #prepend>
-        <v-avatar
-          size="36"
-          rounded="lg"
-          class="ml-1"
-          color="white"
-        >
-          <v-img
-            src="/android/android-launchericon-96-96.png"
-            alt="Logo"
-            cover
-          />
-        </v-avatar>
+        <div class="ml-1" style="width: 52px;" />
       </template>
 
       <!-- Título centralizado -->
@@ -50,6 +36,14 @@ const activeNav = computed(() => {
         NOVO Pernambuco
       </v-app-bar-title>
     </v-app-bar>
+
+    <!-- Logo floating sobre a app bar -->
+    <v-avatar
+      size="56"
+      class="position-fixed elevation-4"
+      style="top: 4px; left: 12px; z-index: 1100;"
+      image="/android/android-launchericon-96-96.png"
+    />
 
     <!-- Conteúdo principal com scroll -->
     <v-main class="bg-grey-lighten-4">

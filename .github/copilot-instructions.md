@@ -56,35 +56,75 @@ const candidatos = await searchCandidatos({ uf: 'SP', ano: 2024 })
 ```
 app/
 ├── composables/
-│   ├── usePostgrest.ts   # Cliente PostgREST direto
-│   └── useEleicoes.ts    # API via proxy (recomendado)
-├── data/eleicoes.ts      # Constantes + Types (ESTADOS, PARTIDOS, CARGOS)
-└── pages/index.vue       # Dashboard principal
+│   ├── usePostgrest.ts       # Cliente PostgREST direto
+│   ├── useEleicoes.ts        # API via proxy (recomendado)
+│   ├── useCandidatoSearch.ts # Busca de candidatos (estado, filtros, agregação)
+│   ├── useCidadesFilter.ts   # Carrega cidades por UF/ano
+│   └── useGeolocalizacao.ts  # Geolocalização via IP (SSR)
+├── data/eleicoes.ts          # Constantes + Types (ESTADOS, PARTIDOS, CARGOS)
+├── utils/formatters.ts       # Funções utilitárias (formatNumber, getSituacaoColor)
+└── pages/index.vue           # Dashboard principal
 server/api/
-├── proxy/[...path].ts    # Proxy CORS para PostgREST
-├── geo.ts                # Geolocalização por IP
-└── eleicoes/             # Endpoints diretos PostgreSQL (Cloudflare Hyperdrive)
+├── proxy/[...path].ts        # Proxy CORS para PostgREST
+├── geo.ts                    # Geolocalização por IP
+└── eleicoes/                 # Endpoints diretos PostgreSQL (Cloudflare Hyperdrive)
+```
+
+## Composables Disponíveis
+
+| Composable | Responsabilidade |
+|------------|------------------|
+| `useCandidatoSearch()` | Busca completa: estado, filtros, validação, agregação de votos |
+| `useCidadesFilter()` | Carrega lista de cidades por UF para eleições municipais |
+| `useGeolocalizacao()` | Detecta estado do usuário via IP (usa `useAsyncData` SSR) |
+| `usePostgrest()` | Cliente PostgREST direto para queries simples |
+| `useEleicoes()` | API via proxy para queries complexas |
+
+### Exemplo de Uso (Padrão Nuxt 4)
+```typescript
+// Composables são auto-importados
+const { candidatos, search, filters, canSearch } = useCandidatoSearch()
+const { cidades, loadCidades } = useCidadesFilter()
+const { estadoDetectado } = useGeolocalizacao()
+
+// Auto-preencher UF baseado em geolocalização
+watchEffect(() => {
+  if (estadoDetectado.value && filters.uf === null) {
+    filters.uf = estadoDetectado.value
+  }
+})
 ```
 
 ## Padrões de Código Vue
 
+### Separação de Responsabilidades
+- **Composables**: Lógica de negócio, estado reativo, chamadas API
+- **Utils**: Funções puras de formatação/transformação
+- **Componentes**: Apenas UI e handlers de eventos
+
 ```vue
 <script setup lang="ts">
-// 1. Imports externos
-import { ref, computed } from 'vue'
-// 2. Imports internos
-import type { CandidatoVotos } from '~/data/eleicoes'
-// 3. Composables
-const { searchCandidatos, loading } = useEleicoes()
-// 4. Estado reativo
-const candidatos = ref<CandidatoVotos[]>([])
-// 5. Computeds e watchers
-const hasResults = computed(() => candidatos.value.length > 0)
+// 1. Imports de dados/tipos
+import { ANOS_ELEICAO, ESTADOS } from '~/data/eleicoes'
+import { formatNumber, getSituacaoColor } from '~/utils/formatters'
+
+// 2. Composables (auto-importados)
+const { candidatos, search, filters } = useCandidatoSearch()
+const { estadoDetectado } = useGeolocalizacao()
+
+// 3. Estado local (apenas UI)
+const showFilters = ref(false)
+
+// 4. Handlers de UI
+function handleSearch(): void {
+  showFilters.value = false
+  search()
+}
 </script>
 
 <template>
   <!-- Vuetify: use self-closing quando sem conteúdo -->
-  <v-text-field v-model="search" label="Buscar" />
+  <v-text-field v-model="searchQuery" label="Buscar" />
   <!-- Slots: use sintaxe shorthand #slot -->
   <template #item.actions="{ item }">
     <v-btn @click="select(item)" />
