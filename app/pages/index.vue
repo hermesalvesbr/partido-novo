@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ANOS_ELEICAO, ESTADOS } from '~/data/eleicoes'
 import { formatNumber, formatSituacao, getSituacaoColor } from '~/utils/formatters'
+import { getPartidoLogoUrl } from '~/utils/partido'
+import { generateCandidatoSlugFromUrna } from '~/utils/slug'
 
 // Composables para separação de responsabilidades
 const {
@@ -70,6 +72,12 @@ function handleClearFilters(): void {
 
 function handleClearSearch(): void {
   searchQuery.value = ''
+}
+
+// Navegar para página do candidato
+function goToCandidato(candidato: { sg_uf: string, nm_urna_candidato: string }): void {
+  const slug = generateCandidatoSlugFromUrna(candidato.sg_uf, candidato.nm_urna_candidato)
+  navigateTo(`/candidato/${slug}`)
 }
 </script>
 
@@ -289,10 +297,20 @@ function handleClearSearch(): void {
           :key="`${candidato.nm_urna_candidato}-${candidato.ano_eleicao}-${candidato.ds_cargo}`"
           variant="flat"
           rounded="lg"
+          class="cursor-pointer"
+          @click="goToCandidato(candidato)"
         >
           <v-card-text class="d-flex align-center ga-3 pa-3">
-            <!-- Avatar com sigla do partido -->
-            <v-avatar color="primary" size="48" class="flex-shrink-0">
+            <!-- Logo do partido -->
+            <v-img
+              v-if="getPartidoLogoUrl(candidato.sg_partido)"
+              :src="getPartidoLogoUrl(candidato.sg_partido)!"
+              :alt="candidato.sg_partido"
+              :max-height="48"
+              :max-width="48"
+              class="flex-shrink-0"
+            />
+            <v-avatar v-else size="48" color="primary" class="flex-shrink-0">
               <span class="text-body-2 font-weight-bold">
                 {{ candidato.sg_partido?.slice(0, 2) }}
               </span>
