@@ -143,19 +143,16 @@ watch(() => filters.ano, async (novoAno) => {
   }
 })
 
-// Chips de filtros ativos
-const activeFilters = computed(() => {
-  const chips: { label: string, clear: () => void }[] = []
-  if (filters.uf) {
-    chips.push({ label: filters.uf, clear: () => filters.uf = null })
-  }
-  if (filters.ano) {
-    chips.push({ label: String(filters.ano), clear: () => filters.ano = null })
-  }
-  if (filters.cidade) {
-    chips.push({ label: filters.cidade, clear: () => filters.cidade = null })
-  }
-  return chips
+// Contagem de filtros ativos para o badge
+const filterCount = computed(() => {
+  let count = 0
+  if (filters.uf)
+    count++
+  if (filters.ano)
+    count++
+  if (filters.cidade)
+    count++
+  return count
 })
 
 // Validação: requer pelo menos 3 caracteres OU filtros selecionados
@@ -210,15 +207,12 @@ async function search(): Promise<void> {
       }
     }
 
-    // Filtros: Para busca por candidato, não aplica UF nem ano (mostra trajetória completa)
-    // Para busca por cidade, aplica UF (obrigatório) e ano (opcional)
-    if (searchType.value === 'cidade') {
-      if (filters.uf) {
-        query = query.eq('sg_uf', filters.uf)
-      }
-      if (filters.ano) {
-        query = query.eq('ano_eleicao', filters.ano)
-      }
+    // Filtros de UF e Ano aplicados para ambos os tipos de busca
+    if (filters.uf) {
+      query = query.eq('sg_uf', filters.uf)
+    }
+    if (filters.ano) {
+      query = query.eq('ano_eleicao', filters.ano)
     }
 
     query = query
@@ -282,17 +276,6 @@ async function search(): Promise<void> {
   }
 }
 
-function clearAll(): void {
-  searchQuery.value = ''
-  filters.uf = null
-  filters.ano = null
-  filters.cidade = null
-  cidades.value = []
-  candidatos.value = []
-  searched.value = false
-  error.value = ''
-}
-
 function formatNumber(num: number): string {
   if (num >= 1_000_000)
     return `${(num / 1_000_000).toFixed(1)}M`
@@ -305,20 +288,38 @@ function getSituacaoColor(situacao: string): string {
   if (!situacao)
     return 'grey'
   const s = situacao.toUpperCase()
-  if (s.includes('ELEITO'))
-    return 'success'
+  // Verificar NÃO ELEITO primeiro (contém "ELEITO" também)
   if (s.includes('NÃO ELEITO'))
     return 'error'
+  if (s.includes('SUPLENTE'))
+    return 'grey'
   if (s.includes('2º TURNO'))
     return 'warning'
+  if (s.includes('ELEITO'))
+    return 'success'
   return 'grey'
+}
+
+function formatSituacao(situacao: string): string {
+  if (!situacao)
+    return '—'
+  const s = situacao.toUpperCase()
+  if (s.includes('NÃO ELEITO'))
+    return '' // Não mostra nada para não eleito
+  if (s.includes('SUPLENTE'))
+    return 'SUPLENTE'
+  if (s.includes('2º TURNO'))
+    return '2º TURNO'
+  if (s.includes('ELEITO'))
+    return 'ELEITO'
+  return ''
 }
 </script>
 
 <template>
-  <v-container fluid class="pa-0 d-flex flex-column" style="min-height: 100vh;">
+  <div class="d-flex flex-column fill-height w-100">
     <!-- Search Bar fixo no topo com tabs de tipo de busca -->
-    <v-sheet color="surface" class="px-4 py-3 flex-shrink-0" elevation="1">
+    <v-sheet color="surface" class="px-4 py-3 flex-shrink-0 w-100" elevation="1">
       <!-- Toggle entre Candidato e Cidade -->
       <v-btn-toggle
         v-model="searchType"
@@ -362,29 +363,44 @@ function getSituacaoColor(situacao: string): string {
           @keyup.enter="search"
         >
           <template #append-inner>
-            <!-- Chip mostrando UF quando busca por cidade -->
-            <v-fade-transition>
+            <!-- Chips de filtros dentro da busca -->
+            <div class="d-flex align-center ga-1">
+              <!-- Chip de Ano -->
               <v-chip
-                v-if="searchType === 'cidade'"
+                v-if="filters.ano"
+                size="x-small"
+                color="secondary"
+                variant="tonal"
+                closable
+                @click="showFilters = true"
+                @click:close="filters.ano = null"
+              >
+                {{ filters.ano }}
+              </v-chip>
+              <!-- Chip de UF -->
+              <v-chip
+                v-if="filters.uf || searchType === 'cidade'"
                 size="x-small"
                 :color="filters.uf ? 'primary' : 'warning'"
                 variant="tonal"
-                class="mr-1"
+                :closable="searchType === 'candidato' && filters.uf !== null"
                 @click="showFilters = true"
+                @click:close="filters.uf = null"
               >
                 <v-icon start size="x-small">
                   mdi-map-marker
                 </v-icon>
                 {{ filters.uf || 'UF?' }}
               </v-chip>
-            </v-fade-transition>
-            <v-btn
-              v-if="searchQuery"
-              icon="mdi-close"
-              size="x-small"
-              variant="text"
-              @click="clearAll"
-            />
+              <!-- Botão limpar busca -->
+              <v-btn
+                v-if="searchQuery"
+                icon="mdi-close"
+                size="x-small"
+                variant="text"
+                @click="searchQuery = ''"
+              />
+            </div>
           </template>
         </v-text-field>
 
@@ -394,8 +410,8 @@ function getSituacaoColor(situacao: string): string {
           @click="showFilters = !showFilters"
         >
           <v-badge
-            v-if="activeFilters.length > 0"
-            :content="activeFilters.length"
+            v-if="filterCount > 0"
+            :content="filterCount"
             color="primary"
           >
             <v-icon>mdi-filter-variant</v-icon>
@@ -406,36 +422,6 @@ function getSituacaoColor(situacao: string): string {
         </v-btn>
       </div>
     </v-sheet>
-
-    <!-- Alerta quando busca por cidade sem UF selecionada -->
-    <v-slide-y-transition>
-      <v-alert
-        v-if="searchType === 'cidade' && !filters.uf"
-        type="info"
-        variant="tonal"
-        density="compact"
-        class="ma-4 mb-0 rounded-lg"
-        closable
-      >
-        <template #prepend>
-          <v-icon>mdi-map-marker-alert</v-icon>
-        </template>
-        <span class="text-body-2">
-          Selecione um <strong>estado (UF)</strong> para buscar por cidade
-        </span>
-        <template #append>
-          <v-btn
-            variant="tonal"
-            size="small"
-            color="info"
-            class="ml-2"
-            @click="showFilters = true"
-          >
-            Filtros
-          </v-btn>
-        </template>
-      </v-alert>
-    </v-slide-y-transition>
 
     <!-- Filtros em Bottom Sheet -->
     <v-bottom-sheet v-model="showFilters" inset>
@@ -463,7 +449,7 @@ function getSituacaoColor(situacao: string): string {
             label="Estado (UF)"
             variant="outlined"
             density="comfortable"
-            clearable
+            :clearable="searchType === 'candidato'"
             hide-details
             class="mb-4"
           />
@@ -485,7 +471,7 @@ function getSituacaoColor(situacao: string): string {
         <v-card-actions class="pa-4">
           <v-btn
             variant="text"
-            @click="filters.uf = null; filters.ano = null; filters.cidade = null"
+            @click="searchType === 'candidato' ? (filters.uf = null, filters.ano = null, filters.cidade = null) : (filters.ano = null, filters.cidade = null)"
           >
             Limpar
           </v-btn>
@@ -503,21 +489,7 @@ function getSituacaoColor(situacao: string): string {
     </v-bottom-sheet>
 
     <!-- Conteúdo principal -->
-    <div class="flex-grow-1 bg-grey-lighten-4 pa-4 overflow-y-auto">
-      <!-- Chips de filtros ativos -->
-      <div v-if="activeFilters.length > 0" class="mb-4">
-        <v-chip
-          v-for="(filter, i) in activeFilters"
-          :key="i"
-          closable
-          size="small"
-          class="mr-2"
-          @click:close="filter.clear(); search()"
-        >
-          {{ filter.label }}
-        </v-chip>
-      </div>
-
+    <div class="flex-grow-1 w-100 bg-grey-lighten-4 px-3 py-4 overflow-y-auto">
       <!-- Estado inicial -->
       <div v-if="!searched && !loading" class="text-center py-16">
         <v-icon size="64" color="grey-lighten-1" class="mb-4">
@@ -550,7 +522,7 @@ function getSituacaoColor(situacao: string): string {
       </div>
 
       <!-- Lista de resultados usando cards -->
-      <div v-else class="d-flex flex-column ga-3">
+      <div v-else class="d-flex flex-column ga-3 w-100">
         <p class="text-caption text-medium-emphasis mb-0">
           {{ candidatos.length }} resultado(s) encontrado(s)
         </p>
@@ -584,11 +556,12 @@ function getSituacaoColor(situacao: string): string {
             <!-- Votos e ano -->
             <div class="text-right flex-shrink-0">
               <v-chip
+                v-if="formatSituacao(candidato.ds_sit_tot_turno)"
                 :color="getSituacaoColor(candidato.ds_sit_tot_turno)"
                 size="x-small"
                 class="mb-1"
               >
-                {{ candidato.ds_sit_tot_turno?.split(' ')[0] || '—' }}
+                {{ formatSituacao(candidato.ds_sit_tot_turno) }}
               </v-chip>
               <p class="text-body-2 font-weight-bold mb-0">
                 {{ formatNumber(candidato.qt_votos_nominais) }} votos
@@ -606,5 +579,5 @@ function getSituacaoColor(situacao: string): string {
         {{ error }}
       </v-alert>
     </div>
-  </v-container>
+  </div>
 </template>
