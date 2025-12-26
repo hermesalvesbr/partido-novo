@@ -105,36 +105,20 @@ function goToCandidato(candidato: { sg_uf: string, nm_urna_candidato: string }):
 
 <template>
   <div class="d-flex flex-column fill-height">
-    <div class="flex-grow-1 overflow-y-auto bg-grey-lighten-4 pb-4">
-      <!-- Header com info da região -->
-      <v-card flat class="rounded-0 pa-4" color="primary">
-        <div class="d-flex align-center">
-          <v-btn
-            icon
-            variant="text"
-            color="white"
-            size="small"
-            class="mr-2"
-            @click="navigateTo('/regioes')"
-          >
-            <v-icon>mdi-arrow-left</v-icon>
-          </v-btn>
-          <div class="flex-grow-1">
-            <h1 class="text-h6 text-white font-weight-bold">
-              {{ mesorregiao?.nome ?? 'Carregando...' }}
-            </h1>
-            <div v-if="mesorregiao" class="d-flex align-center gap-2 mt-1">
-              <v-chip color="white" variant="flat" size="x-small">
-                {{ mesorregiao.UF?.sigla }}
-              </v-chip>
-              <span class="text-white text-caption">
-                {{ municipios?.length ?? 0 }} municípios
-              </span>
-            </div>
-          </div>
-        </div>
-      </v-card>
+    <!-- Header -->
+    <v-app-bar flat color="surface" elevation="1">
+      <v-btn icon="mdi-arrow-left" @click="navigateTo('/regioes')" />
+      <v-app-bar-title>
+        {{ mesorregiao?.nome ?? 'Carregando...' }}
+      </v-app-bar-title>
+      <template #append>
+        <v-chip v-if="mesorregiao" color="primary" variant="tonal" size="small">
+          {{ mesorregiao.UF?.sigla }} · {{ municipios?.length ?? 0 }} municípios
+        </v-chip>
+      </template>
+    </v-app-bar>
 
+    <div class="flex-grow-1 overflow-y-auto bg-grey-lighten-4 pb-4">
       <!-- Loading inicial -->
       <div v-if="loadingMeso && !mesorregiao" class="pa-4">
         <v-card rounded="lg" class="pa-8 text-center">

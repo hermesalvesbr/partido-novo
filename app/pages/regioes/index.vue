@@ -153,11 +153,11 @@ const nomeEstado = computed(() => {
                 </v-list-item-title>
 
                 <v-list-item-subtitle>
-                  <v-chip size="x-small" variant="text" class="pa-0">
-                    <v-icon size="12" class="mr-1">
-                      mdi-chart-bar
+                  <v-chip size="x-small" variant="outlined" class="mt-1">
+                    <v-icon size="12" start>
+                      mdi-city
                     </v-icon>
-                    Clique para ver candidatos
+                    {{ regiao.municipiosCount }} municípios
                   </v-chip>
                 </v-list-item-subtitle>
 

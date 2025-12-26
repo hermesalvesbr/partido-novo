@@ -18,6 +18,22 @@ export interface Mesorregiao {
   id: number
   nome: string
   UF: UFIBGE
+  // Quantidade de municípios (calculada)
+  municipiosCount?: number
+}
+
+// Interface para município do IBGE (simplificada para contagem)
+interface MunicipioContagem {
+  id: number
+  nome: string
+  microrregiao: {
+    id: number
+    nome: string
+    mesorregiao: {
+      id: number
+      nome: string
+    }
+  }
 }
 
 // Mapeamento de sigla UF para código IBGE
@@ -53,27 +69,46 @@ const UF_CODES: Record<Estado, number> = {
 
 /**
  * Composable para buscar mesorregiões do IBGE com cache via useAsyncData
- * Utiliza cache do Nuxt para evitar requisições duplicadas
+ * Utiliza cache do Nuxt 4 para evitar requisições duplicadas
+ * Inclui contagem de municípios por mesorregião
  */
 export function useRegioes(uf: Ref<Estado | null>) {
   const ufCode = computed(() => (uf.value ? UF_CODES[uf.value] : null))
 
   // useAsyncData com key dinâmica baseada no UF para cache eficiente
   const { data: mesorregioes, status, error, refresh } = useAsyncData<Mesorregiao[]>(
-    () => `ibge-mesorregioes-${uf.value}`,
+    () => `ibge-mesorregioes-completo-${uf.value}`,
     async () => {
       if (!ufCode.value)
         return []
 
-      const data = await $fetch<Mesorregiao[]>(
-        `https://servicodados.ibge.gov.br/api/v1/localidades/estados/${ufCode.value}/mesorregioes`,
-      )
-      return data
+      // Buscar mesorregiões e todos os municípios do estado em paralelo
+      const [mesosData, municipiosData] = await Promise.all([
+        $fetch<Mesorregiao[]>(
+          `https://servicodados.ibge.gov.br/api/v1/localidades/estados/${ufCode.value}/mesorregioes`,
+        ),
+        $fetch<MunicipioContagem[]>(
+          `https://servicodados.ibge.gov.br/api/v1/localidades/estados/${ufCode.value}/municipios`,
+        ),
+      ])
+
+      // Contar municípios por mesorregião
+      const contagemPorMeso = new Map<number, number>()
+      for (const mun of municipiosData) {
+        const mesoId = mun.microrregiao.mesorregiao.id
+        contagemPorMeso.set(mesoId, (contagemPorMeso.get(mesoId) || 0) + 1)
+      }
+
+      // Adicionar contagem às mesorregiões
+      return mesosData.map(meso => ({
+        ...meso,
+        municipiosCount: contagemPorMeso.get(meso.id) || 0,
+      }))
     },
     {
       // Watch para reagir a mudanças no UF
       watch: [uf],
-      // Não executar se não tiver UF
+      // Executar imediatamente se tiver UF
       immediate: !!uf.value,
       // Cache: usar dados em cache se disponíveis (não refetch em navegação)
       getCachedData(key, nuxtApp, ctx) {

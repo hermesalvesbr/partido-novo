@@ -1,5 +1,20 @@
 import type { Mesorregiao } from './useRegioes'
 
+// Interface para microrregião do IBGE
+export interface MicrorregiaoIBGE {
+  id: number
+  nome: string
+  mesorregiao: {
+    id: number
+    nome: string
+    UF: {
+      id: number
+      sigla: string
+      nome: string
+    }
+  }
+}
+
 // Interface para município do IBGE
 export interface MunicipioIBGE {
   id: number
@@ -38,78 +53,96 @@ export interface StatsRegiao {
 
 /**
  * Composable para buscar dados de uma mesorregião específica
- * Inclui municípios e candidatos mais votados
+ * Usa a API do IBGE corretamente:
+ * 1. Buscar mesorregião: /mesorregioes/{id}
+ * 2. Buscar microrregiões: /mesorregioes/{id}/microrregioes
+ * 3. Para cada microrregião, buscar municípios: /microrregioes/{id}/municipios
  */
 export function useMesorregiao(mesorregiaoId: Ref<number | null>) {
-  // Key computada para cache
-  const mesoKey = computed(() => `ibge-mesorregiao-${mesorregiaoId.value}`)
+  // Estado reativo
+  const mesorregiao = ref<Mesorregiao | null>(null)
+  const microrregioes = ref<MicrorregiaoIBGE[]>([])
+  const municipios = ref<MunicipioIBGE[]>([])
+  const loading = ref(true)
 
-  // Buscar dados da mesorregião
-  const { data: mesorregiao, status: statusMeso } = useAsyncData<Mesorregiao | null>(
-    mesoKey,
-    async () => {
-      if (!mesorregiaoId.value)
-        return null
+  // Função para buscar dados
+  async function fetchData(id: number): Promise<void> {
+    loading.value = true
 
-      const data = await $fetch<Mesorregiao>(
-        `https://servicodados.ibge.gov.br/api/v1/localidades/mesorregioes/${mesorregiaoId.value}`,
-      )
-      return data
-    },
-    {
-      watch: [mesorregiaoId],
-      immediate: true,
-      getCachedData(key, nuxtApp, ctx) {
-        if (ctx.cause === 'refresh:manual')
-          return undefined
-        return nuxtApp.payload.data[key] ?? nuxtApp.static.data[key]
-      },
-    },
-  )
+    try {
+      // Passo 1 e 2: Buscar mesorregião e suas microrregiões em paralelo
+      const [mesoData, microData] = await Promise.all([
+        $fetch<Mesorregiao>(
+          `https://servicodados.ibge.gov.br/api/v1/localidades/mesorregioes/${id}`,
+        ),
+        $fetch<MicrorregiaoIBGE[]>(
+          `https://servicodados.ibge.gov.br/api/v1/localidades/mesorregioes/${id}/microrregioes`,
+        ),
+      ])
 
-  // Key computada para municípios
-  const municKey = computed(() => `ibge-municipios-mesorregiao-${mesorregiaoId.value}`)
+      mesorregiao.value = mesoData
+      microrregioes.value = microData
 
-  // Buscar municípios da mesorregião
-  const { data: municipios, status: statusMunic } = useAsyncData<MunicipioIBGE[]>(
-    municKey,
-    async () => {
-      if (!mesorregiaoId.value)
-        return []
+      // Passo 3: Buscar municípios de cada microrregião em paralelo
+      if (microData.length > 0) {
+        const municipiosPromises = microData.map(micro =>
+          $fetch<MunicipioIBGE[]>(
+            `https://servicodados.ibge.gov.br/api/v1/localidades/microrregioes/${micro.id}/municipios`,
+          ),
+        )
 
-      const data = await $fetch<MunicipioIBGE[]>(
-        `https://servicodados.ibge.gov.br/api/v1/localidades/mesorregioes/${mesorregiaoId.value}/municipios`,
-        { query: { orderBy: 'nome' } },
-      )
-      return data
-    },
-    {
-      watch: [mesorregiaoId],
-      immediate: true,
-      getCachedData(key, nuxtApp, ctx) {
-        if (ctx.cause === 'refresh:manual')
-          return undefined
-        return nuxtApp.payload.data[key] ?? nuxtApp.static.data[key]
-      },
-      default: () => [],
-    },
-  )
+        const municipiosArrays = await Promise.all(municipiosPromises)
+
+        // Juntar todos os municípios e ordenar por nome
+        municipios.value = municipiosArrays
+          .flat()
+          .sort((a, b) => a.nome.localeCompare(b.nome))
+      }
+      else {
+        municipios.value = []
+      }
+    }
+    catch (e) {
+      console.error('Erro ao buscar dados da mesorregião:', e)
+      mesorregiao.value = null
+      microrregioes.value = []
+      municipios.value = []
+    }
+    finally {
+      loading.value = false
+    }
+  }
+
+  // Watch para buscar quando o ID mudar
+  watch(mesorregiaoId, async (newId) => {
+    if (newId) {
+      await fetchData(newId)
+    }
+    else {
+      mesorregiao.value = null
+      microrregioes.value = []
+      municipios.value = []
+      loading.value = false
+    }
+  }, { immediate: true })
 
   // Lista de nomes de municípios para filtrar candidatos
   const nomesMunicipios = computed(() =>
-    municipios.value?.map(m => m.nome.toUpperCase()) ?? [],
+    municipios.value.map(m => m.nome.toUpperCase()),
   )
 
   return {
     mesorregiao,
+    microrregioes,
     municipios,
     nomesMunicipios,
-    loading: computed(() => statusMeso.value === 'pending' || statusMunic.value === 'pending'),
+    loading,
   }
 }
 
 /**
  * Composable para buscar candidatos mais votados em uma lista de municípios
+ * Busca sob demanda (não automática)
  */
 export function useCandidatosRegiao(
   nomesMunicipios: Ref<string[]>,
@@ -120,15 +153,22 @@ export function useCandidatosRegiao(
   const runtimeConfig = useRuntimeConfig()
   const apiUrl = runtimeConfig.public.postgrestUrl as string
 
-  // Key computada para candidatos
-  const candidatosKey = computed(() => `candidatos-regiao-${uf.value}-${ano.value}-${cargo.value}`)
+  // Estado local
+  const candidatosRaw = ref<Record<string, unknown>[]>([])
+  const loading = ref(false)
+  const error = ref<string | null>(null)
 
-  const { data: candidatosRaw, status, refresh } = useAsyncData<Record<string, unknown>[]>(
-    candidatosKey,
-    async () => {
-      if (!uf.value || nomesMunicipios.value.length === 0)
-        return []
+  // Função de refresh manual
+  async function refresh(): Promise<void> {
+    if (!uf.value || nomesMunicipios.value.length === 0) {
+      candidatosRaw.value = []
+      return
+    }
 
+    loading.value = true
+    error.value = null
+
+    try {
       const { PostgrestClient } = await import('@supabase/postgrest-js')
       const client = new PostgrestClient(apiUrl)
 
@@ -147,26 +187,26 @@ export function useCandidatosRegiao(
         query = query.ilike('ds_cargo', `%${cargo.value}%`)
       }
 
-      const { data, error } = await query
+      const { data, error: fetchError } = await query
 
-      if (error) {
-        console.error('Erro ao buscar candidatos:', error)
-        return []
+      if (fetchError) {
+        console.error('Erro ao buscar candidatos:', fetchError)
+        error.value = fetchError.message
+        candidatosRaw.value = []
+        return
       }
 
-      return data ?? []
-    },
-    {
-      watch: [nomesMunicipios, uf, ano, cargo],
-      immediate: false,
-      getCachedData(key, nuxtApp, ctx) {
-        if (ctx.cause === 'refresh:manual')
-          return undefined
-        return nuxtApp.payload.data[key] ?? nuxtApp.static.data[key]
-      },
-      default: () => [],
-    },
-  )
+      candidatosRaw.value = data ?? []
+    }
+    catch (e) {
+      console.error('Erro ao buscar candidatos:', e)
+      error.value = String(e)
+      candidatosRaw.value = []
+    }
+    finally {
+      loading.value = false
+    }
+  }
 
   // Agregar candidatos (somar votos por candidato)
   const candidatos = computed<CandidatoRegiao[]>(() => {
@@ -238,7 +278,7 @@ export function useCandidatosRegiao(
   return {
     candidatos,
     stats,
-    loading: computed(() => status.value === 'pending'),
+    loading,
     refresh,
   }
 }
