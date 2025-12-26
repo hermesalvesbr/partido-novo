@@ -26,7 +26,7 @@ const { totalFavoritos } = useFavoritos()
 // Navegação bottom para mobile
 const navItems = computed(() => [
   { title: 'Buscar', icon: 'mdi-magnify', to: '/' },
-  { title: 'Estatísticas', icon: 'mdi-chart-bar', to: '/stats' },
+  { title: 'Regiões', icon: 'mdi-map-marker-radius', to: '/regioes' },
   {
     title: 'Favoritos',
     icon: totalFavoritos.value > 0 ? 'mdi-star' : 'mdi-star-outline',
