@@ -1,18 +1,45 @@
 <script setup lang="ts">
+// Adiciona fonte Manrope via Google Fonts
+useHead({
+  link: [
+    {
+      rel: 'preconnect',
+      href: 'https://fonts.googleapis.com',
+    },
+    {
+      rel: 'preconnect',
+      href: 'https://fonts.gstatic.com',
+      crossorigin: '',
+    },
+    {
+      rel: 'stylesheet',
+      href: 'https://fonts.googleapis.com/css2?family=Manrope:wght@800&display=swap',
+    },
+  ],
+})
+
 const route = useRoute()
 
+// Sistema de favoritos
+const { totalFavoritos } = useFavoritos()
+
 // Navegação bottom para mobile
-const navItems = [
+const navItems = computed(() => [
   { title: 'Buscar', icon: 'mdi-magnify', to: '/' },
   { title: 'Estatísticas', icon: 'mdi-chart-bar', to: '/stats' },
-  { title: 'Favoritos', icon: 'mdi-star-outline', to: '/favoritos' },
+  {
+    title: 'Favoritos',
+    icon: totalFavoritos.value > 0 ? 'mdi-star' : 'mdi-star-outline',
+    to: '/favoritos',
+    badge: totalFavoritos.value > 0 ? totalFavoritos.value : null,
+  },
   { title: 'Sobre', icon: 'mdi-information-outline', to: '/sobre' },
-]
+])
 
 // Item ativo baseado na rota atual
 const activeNav = computed(() => {
   const path = route.path
-  const index = navItems.findIndex(item => item.to === path)
+  const index = navItems.value.findIndex(item => item.to === path)
   return index >= 0 ? index : 0
 })
 </script>
@@ -31,9 +58,10 @@ const activeNav = computed(() => {
         <div class="ml-1" style="width: 52px;" />
       </template>
 
-      <!-- Título centralizado -->
-      <v-app-bar-title class="text-body-1 font-weight-bold">
-        NOVO Pernambuco
+      <!-- Título centralizado com fonte Manrope -->
+      <v-app-bar-title>
+        <span class="novo-title">NOVO</span>
+        <span class="text-white font-weight-bold ml-1">Pernambuco</span>
       </v-app-bar-title>
     </v-app-bar>
 
@@ -66,7 +94,18 @@ const activeNav = computed(() => {
         :value="index"
         min-width="60"
       >
-        <v-icon size="22">
+        <v-badge
+          v-if="item.badge"
+          :content="item.badge"
+          color="warning"
+          offset-x="-2"
+          offset-y="-2"
+        >
+          <v-icon size="22">
+            {{ item.icon }}
+          </v-icon>
+        </v-badge>
+        <v-icon v-else size="22">
           {{ item.icon }}
         </v-icon>
         <span class="text-caption mt-1">{{ item.title }}</span>
@@ -74,3 +113,11 @@ const activeNav = computed(() => {
     </v-bottom-navigation>
   </v-app>
 </template>
+
+<style scoped>
+.novo-title {
+  font-family: 'Manrope', sans-serif !important;
+  font-weight: 800 !important;
+  color: #ff7a18 !important; /* Laranja NOVO - secondary */
+}
+</style>

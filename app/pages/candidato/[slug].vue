@@ -6,6 +6,10 @@ import { parseCandidatoSlug, slugify } from '~/utils/slug'
 const route = useRoute()
 const slug = computed(() => route.params.slug as string)
 
+// Sistema de favoritos
+const { isFavorito, toggleFavorito } = useFavoritos()
+const favorito = computed(() => isFavorito(slug.value))
+
 // Parse do slug para extrair UF e nome
 const parsedSlug = computed(() => parseCandidatoSlug(slug.value))
 
@@ -140,6 +144,20 @@ const router = useRouter()
 function goBack() {
   router.back()
 }
+
+// Função para favoritar/desfavoritar
+function handleToggleFavorito() {
+  if (!candidatoData.value)
+    return
+
+  toggleFavorito({
+    slug: slug.value,
+    nome: candidatoData.value.nm_urna_candidato,
+    uf: candidatoData.value.sg_uf,
+    partido: candidatoData.value.eleicoes[0]?.sg_partido,
+    cargo: candidatoData.value.eleicoes[0]?.ds_cargo,
+  })
+}
 </script>
 
 <template>
@@ -150,6 +168,15 @@ function goBack() {
       <v-app-bar-title>
         {{ candidatoData?.nm_urna_candidato || 'Candidato' }}
       </v-app-bar-title>
+
+      <template #append>
+        <v-btn
+          :icon="favorito ? 'mdi-star' : 'mdi-star-outline'"
+          :color="favorito ? 'warning' : undefined"
+          variant="text"
+          @click="handleToggleFavorito"
+        />
+      </template>
     </v-app-bar>
 
     <!-- Loading -->
