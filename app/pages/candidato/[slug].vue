@@ -30,25 +30,26 @@ const { data: candidatoData, status, error } = await useAsyncData(
     const { PostgrestClient } = await import('@supabase/postgrest-js')
     const client = new PostgrestClient(apiUrl)
 
-    // Converte o slug de volta para um padrão de busca
-    // Ex: 'nunes-rafael-mendes-coelho' => '%NUNES%RAFAEL%MENDES%COELHO%'
-    const searchPattern = `%${nomeSlug.split('-').join('%')}%`.toUpperCase()
+    // Busca todos os candidatos da UF que correspondem ao padrão básico
+    // Usamos or para buscar com e sem acento nas primeiras letras
+    const nomeParts = nomeSlug.split('-')
+    const primeiroNome = nomeParts[0] || ''
 
-    // Busca candidatos pelo padrão do nome de urna e UF
+    // Busca ampla por UF e primeiro nome (para cobrir variações com acento)
     const { data, error } = await client
       .from('votacao_candidato_munzona')
       .select('*')
       .eq('sg_uf', uf)
-      .ilike('nm_urna_candidato', searchPattern)
+      .ilike('nm_urna_candidato', `${primeiroNome.charAt(0).toUpperCase()}%`)
       .order('ano_eleicao', { ascending: false })
       .order('qt_votos_nominais', { ascending: false })
-      .limit(1000)
+      .limit(5000)
 
     if (error) {
       throw error
     }
 
-    // Filtra pelo slug exato do nome de urna (para garantir match correto)
+    // Filtra pelo slug exato do nome de urna (slugify remove acentos, garantindo match)
     const candidatoRecords = (data || []).filter((d: Record<string, unknown>) => {
       const nmUrna = d.nm_urna_candidato as string
       return slugify(nmUrna) === nomeSlug
@@ -68,6 +69,9 @@ const { data: candidatoData, status, error } = await useAsyncData(
       total_votos: number
       municipios: Set<string>
     }>()
+
+    // Agrupa votos por município (para componente de geografia)
+    const municipiosMapa = new Map<string, number>()
 
     let nmCandidato = ''
     let nmUrnaCandidato = ''
@@ -95,6 +99,11 @@ const { data: candidatoData, status, error } = await useAsyncData(
           municipios: new Set([r.nm_municipio as string]),
         })
       }
+
+      // Agregar votos por município
+      const nmMunicipio = r.nm_municipio as string
+      const votosAtual = municipiosMapa.get(nmMunicipio) || 0
+      municipiosMapa.set(nmMunicipio, votosAtual + ((r.qt_votos_nominais as number) || 0))
     }
 
     // Converte para array ordenado por ano
@@ -115,11 +124,21 @@ const { data: candidatoData, status, error } = await useAsyncData(
       && !e.ds_sit_tot_turno.toUpperCase().includes('NÃO ELEITO'),
     ).length
 
+    // Converter mapa de municípios para array ordenado
+    const municipiosRanking = Array.from(municipiosMapa.entries())
+      .map(([nm_municipio, total_votos]) => ({
+        nm_municipio,
+        total_votos,
+        percentual: totalVotos > 0 ? (total_votos / totalVotos) * 100 : 0,
+      }))
+      .sort((a, b) => b.total_votos - a.total_votos)
+
     return {
       nm_candidato: nmCandidato,
       nm_urna_candidato: nmUrnaCandidato,
       sg_uf: parsedSlug.value?.uf || '',
       eleicoes,
+      municipiosRanking,
       stats: {
         total_votos: totalVotos,
         anos_ativo: anosAtivo,
@@ -316,6 +335,12 @@ function handleToggleFavorito() {
           </v-chip>
         </div>
       </div>
+
+      <!-- Distribuição Geográfica -->
+      <CandidatoGeografia
+        :municipios="candidatoData.municipiosRanking"
+        :total-votos="candidatoData.stats.total_votos"
+      />
 
       <!-- Histórico de Eleições -->
       <div class="px-4 pb-4">
