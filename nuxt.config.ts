@@ -38,13 +38,21 @@ export default defineNuxtConfig({
         themes: {
           light: {
             colors: {
-              primary: '#1976D2',
-              secondary: '#7B1FA2',
-              accent: '#FF6F00',
-              success: '#4CAF50',
-              info: '#2196F3',
-              warning: '#FB8C00',
-              error: '#FF5252',
+              primary: '#0B2A4A',      // Azul institucional
+              secondary: '#FF7A18',    // Laranja NOVO
+              accent: '#FFC800',       // Amarelo Sertão
+
+              background: '#FFFFFF',
+              surface: '#FFFFFF',
+
+              info: '#1E5A8C',
+              success: '#2E7D32',
+              warning: '#FFC800',
+              error: '#C62828',
+
+              'on-primary': '#FFFFFF',
+              'on-secondary': '#FFFFFF',
+              'on-accent': '#0B2A4A',
             },
           },
         },

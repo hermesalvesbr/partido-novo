@@ -37,5 +37,5 @@ scripts/
 # Data files (large CSV files)
 dados/
 
-# Sensitive server API files (direct DB access)
-server/api/
+# Sensitive server API files (keep specific sensitive endpoints private)
+server/api/proxy/
