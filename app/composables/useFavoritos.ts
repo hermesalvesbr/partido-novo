@@ -5,7 +5,8 @@
 
 export interface CandidatoFavorito {
   slug: string
-  nome: string
+  nome: string // nm_urna_candidato (nome na urna)
+  nomeCompleto?: string // nm_candidato (nome civil completo) - para busca eficiente
   uf: string
   partido?: string
   cargo?: string

@@ -2,6 +2,19 @@
 import { formatNumber, formatSituacao, getSituacaoColor } from '~/utils/formatters'
 import { parseCandidatoSlug, slugify } from '~/utils/slug'
 
+// Interface para os dados do candidato vindos da API
+interface CandidatoRecord {
+  nm_candidato: string
+  nm_urna_candidato: string
+  sg_partido: string
+  ds_cargo: string
+  ano_eleicao: number
+  nr_turno: number
+  ds_sit_tot_turno: string
+  qt_votos_nominais: number
+  nm_municipio: string
+}
+
 // Pega o slug da rota
 const route = useRoute()
 const slug = computed(() => route.params.slug as string)
@@ -12,6 +25,9 @@ const favorito = computed(() => isFavorito(slug.value))
 
 // Parse do slug para extrair UF e nome
 const parsedSlug = computed(() => parseCandidatoSlug(slug.value))
+
+// Composable para obter candidato pré-selecionado (passado via navegação)
+const { getCandidatoBySlug } = useCandidatoSelecionado()
 
 // Buscar dados do candidato (lazy para não bloquear navegação)
 const runtimeConfig = useRuntimeConfig()
@@ -27,16 +43,14 @@ const { data: candidatoData, status, error } = await useLazyAsyncData(
 
     const { uf, nomeSlug } = parsedSlug.value
 
+    // Tenta obter o candidato do estado compartilhado (navegação via CandidatoCard)
+    // Isso evita a busca complexa por palavras distintivas
+    const candidatoPreSelecionado = getCandidatoBySlug(nomeSlug)
+
     const { PostgrestClient } = await import('@supabase/postgrest-js')
     const client = new PostgrestClient(apiUrl)
 
-    // Busca todos os candidatos da UF que correspondem ao padrão básico
-    // Usamos or para buscar com e sem acento nas primeiras letras
-    const nomeParts = nomeSlug.split('-')
-    const primeiroNome = nomeParts[0] || ''
-
-    // OTIMIZAÇÃO: Selecionar APENAS os campos necessários (antes trazia 6.85 MB com select=*)
-    // Campos reduzidos de ~40 para 8 = redução de ~80% no tráfego
+    // OTIMIZAÇÃO: Selecionar APENAS os campos necessários
     const camposNecessarios = [
       'nm_candidato',
       'nm_urna_candidato',
@@ -49,24 +63,47 @@ const { data: candidatoData, status, error } = await useLazyAsyncData(
       'nm_municipio',
     ].join(',')
 
-    // Busca ampla por UF e primeiro nome (para cobrir variações com acento)
+    // OTIMIZAÇÃO: Se temos o candidato pré-selecionado, usa o nome exato para busca
+    // Isso é muito mais eficiente que buscar por palavras distintivas
+    let nomeParaBusca: string
+
+    if (candidatoPreSelecionado) {
+      // Busca exata pelo nome completo (passado via navegação)
+      nomeParaBusca = candidatoPreSelecionado.nm_candidato
+    }
+    else {
+      // Fallback: Estratégia de busca por palavras distintivas (acesso direto via URL)
+      const nomeParts = nomeSlug.split('-')
+      const palavrasDistintivas = nomeParts
+        .filter(p => p.length >= 4)
+        .sort((a, b) => b.length - a.length)
+        .slice(0, 3)
+
+      const palavrasParaBusca = palavrasDistintivas.length > 0
+        ? palavrasDistintivas
+        : nomeParts.slice(0, 3)
+
+      nomeParaBusca = palavrasParaBusca[0]?.toUpperCase() || ''
+    }
+
+    // Busca por nome completo (exato se pré-selecionado, ou por palavra distintiva)
     const { data, error } = await client
       .from('votacao_candidato_munzona')
       .select(camposNecessarios)
       .eq('sg_uf', uf)
-      .ilike('nm_urna_candidato', `${primeiroNome.charAt(0).toUpperCase()}%`)
+      .ilike('nm_candidato', candidatoPreSelecionado ? nomeParaBusca : `%${nomeParaBusca}%`)
       .order('ano_eleicao', { ascending: false })
       .order('qt_votos_nominais', { ascending: false })
-      .limit(5000)
+      .limit(candidatoPreSelecionado ? 10000 : 2000)
 
     if (error) {
       throw error
     }
 
-    // Filtra pelo slug exato do nome de urna (slugify remove acentos, garantindo match)
-    const candidatoRecords = (data || []).filter((d: Record<string, unknown>) => {
-      const nmUrna = d.nm_urna_candidato as string
-      return slugify(nmUrna) === nomeSlug
+    // Filtra pelo slug exato do nome completo (slugify remove acentos, garantindo match)
+    const rawData = data as unknown as CandidatoRecord[]
+    const candidatoRecords = (rawData || []).filter((d) => {
+      return slugify(d.nm_candidato) === nomeSlug
     })
 
     if (candidatoRecords.length === 0) {
@@ -90,34 +127,32 @@ const { data: candidatoData, status, error } = await useLazyAsyncData(
     let nmCandidato = ''
     let nmUrnaCandidato = ''
 
-    for (const record of candidatoRecords) {
-      const r = record as Record<string, unknown>
-      nmCandidato = r.nm_candidato as string
-      nmUrnaCandidato = r.nm_urna_candidato as string
+    for (const r of candidatoRecords) {
+      nmCandidato = r.nm_candidato
+      nmUrnaCandidato = r.nm_urna_candidato
 
       const key = `${r.ano_eleicao}-${r.ds_cargo}-${r.nr_turno}`
       const existing = eleicoesMapa.get(key)
 
       if (existing) {
-        existing.total_votos += (r.qt_votos_nominais as number) || 0
-        existing.municipios.add(r.nm_municipio as string)
+        existing.total_votos += r.qt_votos_nominais || 0
+        existing.municipios.add(r.nm_municipio)
       }
       else {
         eleicoesMapa.set(key, {
-          ano_eleicao: r.ano_eleicao as number,
-          ds_cargo: r.ds_cargo as string,
-          sg_partido: r.sg_partido as string,
-          nr_turno: r.nr_turno as number,
-          ds_sit_tot_turno: r.ds_sit_tot_turno as string,
-          total_votos: (r.qt_votos_nominais as number) || 0,
-          municipios: new Set([r.nm_municipio as string]),
+          ano_eleicao: r.ano_eleicao,
+          ds_cargo: r.ds_cargo,
+          sg_partido: r.sg_partido,
+          nr_turno: r.nr_turno,
+          ds_sit_tot_turno: r.ds_sit_tot_turno,
+          total_votos: r.qt_votos_nominais || 0,
+          municipios: new Set([r.nm_municipio]),
         })
       }
 
       // Agregar votos por município
-      const nmMunicipio = r.nm_municipio as string
-      const votosAtual = municipiosMapa.get(nmMunicipio) || 0
-      municipiosMapa.set(nmMunicipio, votosAtual + ((r.qt_votos_nominais as number) || 0))
+      const votosAtual = municipiosMapa.get(r.nm_municipio) || 0
+      municipiosMapa.set(r.nm_municipio, votosAtual + (r.qt_votos_nominais || 0))
     }
 
     // Converte para array ordenado por ano
@@ -167,7 +202,8 @@ const { data: candidatoData, status, error } = await useLazyAsyncData(
     // Cache inteligente: dados eleitorais raramente mudam
     getCachedData(key, nuxtApp, ctx) {
       // Sempre usar cache exceto em refresh manual
-      if (ctx.cause === 'refresh:manual') return undefined
+      if (ctx.cause === 'refresh:manual')
+        return undefined
       // Verificar cache do payload (SSR) ou static
       return nuxtApp.payload.data[key] ?? nuxtApp.static.data[key]
     },
@@ -210,6 +246,7 @@ function handleToggleFavorito() {
   toggleFavorito({
     slug: slug.value,
     nome: candidatoData.value.nm_urna_candidato,
+    nomeCompleto: candidatoData.value.nm_candidato,
     uf: candidatoData.value.sg_uf,
     partido: candidatoData.value.eleicoes[0]?.sg_partido,
     cargo: candidatoData.value.eleicoes[0]?.ds_cargo,
@@ -218,7 +255,8 @@ function handleToggleFavorito() {
 
 // Compartilhar no WhatsApp
 function shareWhatsApp() {
-  if (!candidatoData.value) return
+  if (!candidatoData.value)
+    return
 
   const { nm_urna_candidato, sg_uf, stats } = candidatoData.value
   const url = `${window.location.origin}/candidato/${slug.value}`

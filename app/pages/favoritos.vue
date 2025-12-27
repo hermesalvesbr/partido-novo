@@ -2,6 +2,9 @@
 // Gerenciamento de favoritos
 const { favoritosOrdenados, removeFavorito, totalFavoritos } = useFavoritos()
 
+// Composable para passar dados do candidato para a página de detalhes
+const { setCandidato } = useCandidatoSelecionado()
+
 // SEO Meta
 useSeoMeta({
   title: 'Favoritos',
@@ -15,8 +18,18 @@ useSeoMeta({
 // Navegação
 const router = useRouter()
 
-function goToCandidato(slug: string) {
-  router.push(`/candidato/${slug}`)
+function goToCandidato(candidato: { slug: string, nome: string, nomeCompleto?: string, uf: string, partido?: string, cargo?: string }) {
+  // Passa os dados do candidato para otimizar a busca na página de detalhes
+  if (candidato.nomeCompleto) {
+    setCandidato({
+      nm_candidato: candidato.nomeCompleto,
+      nm_urna_candidato: candidato.nome,
+      sg_uf: candidato.uf,
+      sg_partido: candidato.partido,
+      ds_cargo: candidato.cargo,
+    })
+  }
+  router.push(`/candidato/${candidato.slug}`)
 }
 </script>
 
@@ -60,7 +73,7 @@ function goToCandidato(slug: string) {
               v-for="candidato in favoritosOrdenados"
               :key="candidato.slug"
               class="py-3"
-              @click="goToCandidato(candidato.slug)"
+              @click="goToCandidato(candidato)"
             >
               <template #prepend>
                 <v-avatar color="primary" variant="tonal">

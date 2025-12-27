@@ -27,6 +27,7 @@ const {
   searchPlaceholder,
   searchIcon,
   search,
+  clearResults,
   clearFilters,
   setUf,
 } = useCandidatoSearch()
@@ -60,6 +61,13 @@ watch(
     filters.cargo = null
   },
 )
+
+// Limpar resultados quando o usuário começar a digitar nova busca
+watch(searchQuery, () => {
+  if (searched.value) {
+    clearResults()
+  }
+})
 
 // Auto-preencher UF baseado na geolocalização
 watchEffect(() => {
@@ -95,6 +103,7 @@ function handleClearFilters(): void {
 
 function handleClearSearch(): void {
   searchQuery.value = ''
+  clearResults()
 }
 </script>
 

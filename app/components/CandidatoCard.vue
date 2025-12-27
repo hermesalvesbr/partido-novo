@@ -1,24 +1,7 @@
 <script setup lang="ts">
 import { formatNumber, formatSituacao, getSituacaoColor } from '~/utils/formatters'
 import { getPartidoLogoUrl } from '~/utils/partido'
-import { generateCandidatoSlugFromUrna } from '~/utils/slug'
-
-// Interface flexível para candidato (suporta ambos os formatos)
-export interface CandidatoCardData {
-  nm_candidato: string
-  nm_urna_candidato: string
-  sg_partido: string
-  ds_cargo: string
-  sg_uf: string
-  ds_sit_tot_turno: string
-  ano_eleicao?: number
-  nm_municipio?: string
-  // Suporta ambos os nomes de campo para votos
-  qt_votos_nominais?: number
-  total_votos?: number
-  // Dados extras para modo ranking
-  municipios_votados?: string[]
-}
+import { generateCandidatoSlug } from '~/utils/slug'
 
 const props = withDefaults(defineProps<{
   candidato: CandidatoCardData
@@ -37,6 +20,26 @@ const props = withDefaults(defineProps<{
   variant: 'card',
 })
 
+// Composable para passar dados do candidato para a página de detalhes
+const { setCandidato } = useCandidatoSelecionado()
+
+// Interface flexível para candidato (suporta ambos os formatos)
+export interface CandidatoCardData {
+  nm_candidato: string
+  nm_urna_candidato: string
+  sg_partido: string
+  ds_cargo: string
+  sg_uf: string
+  ds_sit_tot_turno: string
+  ano_eleicao?: number
+  nm_municipio?: string
+  // Suporta ambos os nomes de campo para votos
+  qt_votos_nominais?: number
+  total_votos?: number
+  // Dados extras para modo ranking
+  municipios_votados?: string[]
+}
+
 // Computed: Total de votos (suporta ambos os campos)
 const totalVotos = computed(() =>
   props.candidato.total_votos ?? props.candidato.qt_votos_nominais ?? 0,
@@ -51,9 +54,19 @@ const logoUrl = computed(() => getPartidoLogoUrl(props.candidato.sg_partido))
 // Computed: Quantidade de municípios
 const municipiosCount = computed(() => props.candidato.municipios_votados?.length ?? 0)
 
-// Navegar para página do candidato
+// Navegar para página do candidato usando nome completo (garante unicidade)
 function navigateToCandidato(): void {
-  const slug = generateCandidatoSlugFromUrna(props.candidato.sg_uf, props.candidato.nm_urna_candidato)
+  // Salva os dados do candidato no estado compartilhado para evitar busca desnecessária
+  setCandidato({
+    nm_candidato: props.candidato.nm_candidato,
+    nm_urna_candidato: props.candidato.nm_urna_candidato,
+    sg_uf: props.candidato.sg_uf,
+    sg_partido: props.candidato.sg_partido,
+    ds_cargo: props.candidato.ds_cargo,
+    ano_eleicao: props.candidato.ano_eleicao,
+  })
+
+  const slug = generateCandidatoSlug(props.candidato.sg_uf, props.candidato.nm_candidato)
   navigateTo(`/candidato/${slug}`)
 }
 </script>

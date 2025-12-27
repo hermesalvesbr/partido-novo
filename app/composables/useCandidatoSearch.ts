@@ -27,35 +27,70 @@ export interface SearchFilters {
   cargo: Cargo | null
 }
 
-// Opções de configuração
-interface UseCandidatoSearchOptions {
-  initialFilters?: Partial<SearchFilters>
+// Estado persistente da busca
+interface SearchState {
+  searched: boolean
+  candidatos: CandidatoBusca[]
+  searchQuery: string
+  searchType: SearchType
+  filters: SearchFilters
+  error: string
 }
+
+// Estado inicial
+const defaultState = (): SearchState => ({
+  searched: false,
+  candidatos: [],
+  searchQuery: '',
+  searchType: 'candidato',
+  filters: {
+    uf: null,
+    ano: null,
+    cidade: null,
+    cargo: null,
+  },
+  error: '',
+})
 
 /**
  * Composable para busca de candidatos eleitorais
+ * Usa useState para persistir estado entre navegações (Nuxt 4 best practice)
  * Encapsula toda a lógica de busca, filtros e agregação de resultados
  */
-export function useCandidatoSearch(options: UseCandidatoSearchOptions = {}) {
+export function useCandidatoSearch() {
   // Runtime config para URL da API
   const runtimeConfig = useRuntimeConfig()
   const apiUrl = runtimeConfig.public.postgrestUrl as string
   const client = new PostgrestClient(apiUrl)
 
-  // Estado reativo
-  const loading = ref(false)
-  const searched = ref(false)
-  const error = ref('')
-  const candidatos = ref<CandidatoBusca[]>([])
-  const searchQuery = ref('')
-  const searchType = ref<SearchType>('candidato')
+  // Estado persistente usando useState (SSR-friendly, persiste entre navegações)
+  const state = useState<SearchState>('candidato-search-state', defaultState)
 
-  // Filtros
-  const filters = reactive<SearchFilters>({
-    uf: options.initialFilters?.uf ?? null,
-    ano: options.initialFilters?.ano ?? null,
-    cidade: options.initialFilters?.cidade ?? null,
-    cargo: options.initialFilters?.cargo ?? null,
+  // Estado local apenas para loading (não precisa persistir)
+  const loading = ref(false)
+
+  // Computed writable para searchQuery (compatibilidade com v-model)
+  const searchQuery = computed({
+    get: () => state.value.searchQuery,
+    set: (value: string) => { state.value.searchQuery = value },
+  })
+
+  // Computed writable para searchType (compatibilidade com v-model)
+  const searchType = computed({
+    get: () => state.value.searchType,
+    set: (value: SearchType) => { state.value.searchType = value },
+  })
+
+  // Filtros como objeto reativo (getters/setters para compatibilidade)
+  const filters = reactive({
+    get uf() { return state.value.filters.uf },
+    set uf(value: Estado | null) { state.value.filters.uf = value },
+    get ano() { return state.value.filters.ano },
+    set ano(value: AnoEleicao | null) { state.value.filters.ano = value },
+    get cidade() { return state.value.filters.cidade },
+    set cidade(value: string | null) { state.value.filters.cidade = value },
+    get cargo() { return state.value.filters.cargo },
+    set cargo(value: Cargo | null) { state.value.filters.cargo = value },
   })
 
   // Computed: É eleição municipal?
@@ -77,11 +112,11 @@ export function useCandidatoSearch(options: UseCandidatoSearchOptions = {}) {
 
   // Computed: Pode buscar?
   const canSearch = computed(() => {
-    const hasQuery = searchQuery.value.trim().length >= 3
+    const hasQuery = state.value.searchQuery.trim().length >= 3
     const hasFilters = filters.uf !== null || filters.ano !== null || filters.cidade !== null
 
     // Busca por cidade exige UF
-    if (searchType.value === 'cidade' && !filters.uf) {
+    if (state.value.searchType === 'cidade' && !filters.uf) {
       return false
     }
 
@@ -90,14 +125,14 @@ export function useCandidatoSearch(options: UseCandidatoSearchOptions = {}) {
 
   // Placeholder dinâmico
   const searchPlaceholder = computed(() =>
-    searchType.value === 'candidato'
+    state.value.searchType === 'candidato'
       ? 'Buscar nome do candidato...'
       : 'Buscar nome da cidade...',
   )
 
   // Ícone dinâmico
   const searchIcon = computed(() =>
-    searchType.value === 'candidato'
+    state.value.searchType === 'candidato'
       ? 'mdi-account-search'
       : 'mdi-city-variant',
   )
@@ -143,8 +178,8 @@ export function useCandidatoSearch(options: UseCandidatoSearchOptions = {}) {
       return
 
     loading.value = true
-    searched.value = true
-    error.value = ''
+    state.value.searched = true
+    state.value.error = ''
 
     try {
       const tableName = 'votacao_candidato_munzona'
@@ -156,11 +191,11 @@ export function useCandidatoSearch(options: UseCandidatoSearchOptions = {}) {
         .select(selectFields)
 
       // Busca por termo
-      const term = searchQuery.value.trim()
+      const term = state.value.searchQuery.trim()
       if (term.length >= 3) {
         const termPattern = `%${term.replace(/\s+/g, '%')}%`
 
-        if (searchType.value === 'candidato') {
+        if (state.value.searchType === 'candidato') {
           query = query.ilike('nm_urna_candidato', termPattern)
         }
         else {
@@ -190,11 +225,11 @@ export function useCandidatoSearch(options: UseCandidatoSearchOptions = {}) {
 
       const rawData = (data || []) as unknown as Record<string, unknown>[]
 
-      if (searchType.value === 'candidato') {
-        candidatos.value = aggregateCandidatos(rawData)
+      if (state.value.searchType === 'candidato') {
+        state.value.candidatos = aggregateCandidatos(rawData)
       }
       else {
-        candidatos.value = rawData.map(d => ({
+        state.value.candidatos = rawData.map(d => ({
           ...d,
           qt_votos_nominais: (d.qt_votos_nominais as number) || 0,
         })) as CandidatoBusca[]
@@ -202,7 +237,7 @@ export function useCandidatoSearch(options: UseCandidatoSearchOptions = {}) {
     }
     catch (e: unknown) {
       const err = e as Error
-      error.value = err.message || 'Erro na busca'
+      state.value.error = err.message || 'Erro na busca'
     }
     finally {
       loading.value = false
@@ -213,26 +248,26 @@ export function useCandidatoSearch(options: UseCandidatoSearchOptions = {}) {
    * Limpa os resultados da busca
    */
   function clearResults(): void {
-    candidatos.value = []
-    searched.value = false
-    error.value = ''
+    state.value.candidatos = []
+    state.value.searched = false
+    state.value.error = ''
   }
 
   /**
    * Limpa os filtros
    */
   function clearFilters(): void {
-    if (searchType.value === 'candidato') {
-      filters.uf = null
-      filters.ano = null
-      filters.cidade = null
-      filters.cargo = null
+    if (state.value.searchType === 'candidato') {
+      state.value.filters.uf = null
+      state.value.filters.ano = null
+      state.value.filters.cidade = null
+      state.value.filters.cargo = null
     }
     else {
       // Para busca por cidade, mantém UF
-      filters.ano = null
-      filters.cidade = null
-      filters.cargo = null
+      state.value.filters.ano = null
+      state.value.filters.cidade = null
+      state.value.filters.cargo = null
     }
   }
 
@@ -240,15 +275,22 @@ export function useCandidatoSearch(options: UseCandidatoSearchOptions = {}) {
    * Define o estado (UF) nos filtros
    */
   function setUf(uf: Estado | null): void {
-    filters.uf = uf
+    state.value.filters.uf = uf
+  }
+
+  /**
+   * Reseta todo o estado da busca para o inicial
+   */
+  function resetState(): void {
+    state.value = defaultState()
   }
 
   return {
     // Estado
     loading: readonly(loading),
-    searched: readonly(searched),
-    error: readonly(error),
-    candidatos: readonly(candidatos),
+    searched: computed(() => state.value.searched),
+    error: computed(() => state.value.error),
+    candidatos: computed(() => state.value.candidatos),
     searchQuery,
     searchType,
     filters,
@@ -265,5 +307,6 @@ export function useCandidatoSearch(options: UseCandidatoSearchOptions = {}) {
     clearResults,
     clearFilters,
     setUf,
+    resetState,
   }
 }

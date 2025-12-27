@@ -7,7 +7,7 @@ export default defineNuxtConfig({
     '@nuxt/image',
   ],
 
-  devtools: { enabled: true },
+  devtools: { enabled: false },
 
   // Experimental features para melhor performance
   experimental: {

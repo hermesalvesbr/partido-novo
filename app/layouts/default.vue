@@ -94,17 +94,11 @@ const activeNav = computed(() => {
         :value="index"
         min-width="60"
       >
-        <v-badge
-          v-if="item.badge"
-          :content="item.badge"
-          color="warning"
-          offset-x="-2"
-          offset-y="-2"
-        >
-          <v-icon size="22">
-            {{ item.icon }}
-          </v-icon>
-        </v-badge>
+        <template v-if="item.badge">
+          <v-chip size="x-small" color="warning" variant="flat" class="font-weight-bold">
+            {{ item.badge }}
+          </v-chip>
+        </template>
         <v-icon v-else size="22">
           {{ item.icon }}
         </v-icon>
