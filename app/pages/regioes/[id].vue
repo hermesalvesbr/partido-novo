@@ -1,10 +1,7 @@
 <script setup lang="ts">
 import type { MunicipioIBGE } from '~/composables/useMesorregiao'
-import type { AnoEleicao } from '~/data/eleicoes'
-import { ANOS_ELEICAO } from '~/data/eleicoes'
-import { formatNumber, getSituacaoColor } from '~/utils/formatters'
-import { getPartidoLogoUrl } from '~/utils/partido'
-import { generateCandidatoSlugFromUrna } from '~/utils/slug'
+import type { AnoEleicao, Cargo } from '~/data/eleicoes'
+import { ANOS_ELEICAO, TIPOS_ELEICAO } from '~/data/eleicoes'
 
 // Pegar ID da mesorregião da rota
 const route = useRoute()
@@ -45,7 +42,7 @@ const municipiosSelecionados = ref<MunicipioIBGE[]>([])
 
 // Filtros
 const anoSelecionado = ref<AnoEleicao>(2024)
-const cargoSelecionado = ref<string | null>(null)
+const cargoSelecionado = ref<Cargo | null>(null)
 
 // Controle de consulta
 const consultaIniciada = ref(false)
@@ -63,13 +60,14 @@ const nomesMunicipiosSelecionados = computed(() =>
   municipiosSelecionados.value.map(m => m.nome.toUpperCase()),
 )
 
-// Cargos disponíveis baseado no ano
-const cargosDisponiveis = computed(() => {
-  const ano = anoSelecionado.value
-  if (ano === 2020 || ano === 2024) {
-    return ['Prefeito', 'Vereador']
-  }
-  return ['Governador', 'Senador', 'Deputado Federal', 'Deputado Estadual']
+// Cargos disponíveis baseado no ano (usando dados centralizados)
+const cargosDisponiveis = computed((): readonly Cargo[] => {
+  return TIPOS_ELEICAO[anoSelecionado.value]?.cargos ?? []
+})
+
+// Limpar cargo quando o ano mudar
+watch(anoSelecionado, () => {
+  cargoSelecionado.value = null
 })
 
 // Composable para buscar candidatos (não busca automaticamente)
@@ -110,12 +108,6 @@ async function iniciarConsulta(): Promise<void> {
 
 // Top 20 candidatos para exibição
 const topCandidatos = computed(() => candidatos.value.slice(0, 20))
-
-// Navegar para candidato
-function goToCandidato(candidato: { sg_uf: string, nm_urna_candidato: string }): void {
-  const slug = generateCandidatoSlugFromUrna(candidato.sg_uf, candidato.nm_urna_candidato)
-  navigateTo(`/candidato/${slug}`)
-}
 </script>
 
 <template>
@@ -362,69 +354,13 @@ function goToCandidato(candidato: { sg_uf: string, nm_urna_candidato: string }):
               <v-card v-else rounded="lg" elevation="0">
                 <v-list lines="three" class="py-0">
                   <template v-for="(candidato, index) in topCandidatos" :key="`${candidato.nm_candidato}-${candidato.sg_partido}`">
-                    <v-list-item
-                      class="px-3 py-2"
-                      @click="goToCandidato(candidato)"
-                    >
-                      <template #prepend>
-                        <div class="d-flex align-center mr-2">
-                          <div
-                            class="text-caption font-weight-bold text-medium-emphasis mr-2"
-                            style="width: 24px; text-align: right;"
-                          >
-                            {{ index + 1 }}º
-                          </div>
-                          <v-avatar size="40" rounded="lg">
-                            <v-img
-                              :src="getPartidoLogoUrl(candidato.sg_partido) ?? undefined"
-                              :alt="candidato.sg_partido"
-                            >
-                              <template #error>
-                                <div class="d-flex align-center justify-center fill-height bg-grey-lighten-2">
-                                  <span class="text-caption font-weight-bold">{{ candidato.sg_partido.slice(0, 2) }}</span>
-                                </div>
-                              </template>
-                            </v-img>
-                          </v-avatar>
-                        </div>
-                      </template>
-
-                      <v-list-item-title class="font-weight-medium text-body-2">
-                        {{ candidato.nm_urna_candidato }}
-                      </v-list-item-title>
-
-                      <v-list-item-subtitle class="text-caption">
-                        <div class="d-flex flex-wrap align-center gap-1 mt-1">
-                          <v-chip size="x-small" variant="tonal" color="primary">
-                            {{ candidato.sg_partido }}
-                          </v-chip>
-                          <v-chip size="x-small" variant="text">
-                            {{ candidato.ds_cargo }}
-                          </v-chip>
-                          <v-chip
-                            size="x-small"
-                            variant="tonal"
-                            :color="getSituacaoColor(candidato.ds_sit_tot_turno)"
-                          >
-                            {{ candidato.ds_sit_tot_turno }}
-                          </v-chip>
-                        </div>
-                        <div class="mt-1 text-caption text-medium-emphasis">
-                          {{ candidato.municipios_votados.length }} município(s)
-                        </div>
-                      </v-list-item-subtitle>
-
-                      <template #append>
-                        <div class="text-right">
-                          <div class="text-subtitle-2 font-weight-bold text-primary">
-                            {{ formatNumber(candidato.total_votos) }}
-                          </div>
-                          <div class="text-caption text-medium-emphasis">
-                            votos
-                          </div>
-                        </div>
-                      </template>
-                    </v-list-item>
+                    <CandidatoCard
+                      :candidato="candidato"
+                      :rank="index + 1"
+                      :show-ano="false"
+                      :show-municipios="true"
+                      variant="list"
+                    />
 
                     <v-divider v-if="index < topCandidatos.length - 1" />
                   </template>

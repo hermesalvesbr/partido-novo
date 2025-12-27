@@ -1,8 +1,6 @@
 <script setup lang="ts">
-import { ANOS_ELEICAO, ESTADOS } from '~/data/eleicoes'
-import { formatNumber, formatSituacao, getSituacaoColor } from '~/utils/formatters'
-import { getPartidoLogoUrl } from '~/utils/partido'
-import { generateCandidatoSlugFromUrna } from '~/utils/slug'
+import type { AnoEleicao, Cargo } from '~/data/eleicoes'
+import { ANOS_ELEICAO, ESTADOS, TIPOS_ELEICAO } from '~/data/eleicoes'
 
 // SEO Meta Tags
 useSeoMeta({
@@ -48,6 +46,21 @@ const showFilters = ref(false)
 // Computed: Mostrar filtro de cidade
 const showCidadeFilter = computed(() => filters.uf !== null && isEleicaoMunicipal.value)
 
+// Computed: Cargos disponíveis para o ano selecionado
+const cargosDisponiveis = computed((): readonly Cargo[] => {
+  if (!filters.ano)
+    return []
+  return TIPOS_ELEICAO[filters.ano as AnoEleicao]?.cargos ?? []
+})
+
+// Limpar cargo quando o ano mudar
+watch(
+  () => filters.ano,
+  () => {
+    filters.cargo = null
+  },
+)
+
 // Auto-preencher UF baseado na geolocalização
 watchEffect(() => {
   if (estadoDetectado.value && filters.uf === null) {
@@ -82,12 +95,6 @@ function handleClearFilters(): void {
 
 function handleClearSearch(): void {
   searchQuery.value = ''
-}
-
-// Navegar para página do candidato
-function goToCandidato(candidato: { sg_uf: string, nm_urna_candidato: string }): void {
-  const slug = generateCandidatoSlugFromUrna(candidato.sg_uf, candidato.nm_urna_candidato)
-  navigateTo(`/candidato/${slug}`)
 }
 </script>
 
@@ -229,6 +236,18 @@ function goToCandidato(candidato: { sg_uf: string, nm_urna_candidato: string }):
             class="mb-4"
           />
 
+          <v-select
+            v-model="filters.cargo"
+            :items="cargosDisponiveis"
+            label="Cargo"
+            variant="outlined"
+            density="comfortable"
+            clearable
+            hide-details
+            :disabled="!filters.ano"
+            class="mb-4"
+          />
+
           <v-autocomplete
             v-if="showCidadeFilter"
             v-model="filters.cidade"
@@ -302,61 +321,12 @@ function goToCandidato(candidato: { sg_uf: string, nm_urna_candidato: string }):
           {{ candidatos.length }} resultado(s) encontrado(s)
         </p>
 
-        <v-card
+        <CandidatoCard
           v-for="candidato in candidatos"
           :key="`${candidato.nm_urna_candidato}-${candidato.ano_eleicao}-${candidato.ds_cargo}`"
-          variant="flat"
-          rounded="lg"
-          class="cursor-pointer"
-          @click="goToCandidato(candidato)"
-        >
-          <v-card-text class="d-flex align-center ga-3 pa-3">
-            <!-- Logo do partido -->
-            <v-img
-              v-if="getPartidoLogoUrl(candidato.sg_partido)"
-              :src="getPartidoLogoUrl(candidato.sg_partido)!"
-              :alt="candidato.sg_partido"
-              :max-height="48"
-              :max-width="48"
-              class="flex-shrink-0"
-            />
-            <v-avatar v-else size="48" color="primary" class="flex-shrink-0">
-              <span class="text-body-2 font-weight-bold">
-                {{ candidato.sg_partido?.slice(0, 2) }}
-              </span>
-            </v-avatar>
-
-            <!-- Informações do candidato -->
-            <div class="flex-grow-1 overflow-hidden">
-              <p class="text-body-1 font-weight-medium text-truncate mb-0">
-                {{ candidato.nm_urna_candidato || candidato.nm_candidato }}
-              </p>
-              <p class="text-caption text-medium-emphasis mb-0">
-                {{ candidato.sg_partido }} · {{ candidato.ds_cargo }}
-                <span v-if="candidato.nm_municipio"> · {{ candidato.nm_municipio }}</span>
-                - {{ candidato.sg_uf }}
-              </p>
-            </div>
-
-            <!-- Votos e ano -->
-            <div class="text-right flex-shrink-0">
-              <v-chip
-                v-if="formatSituacao(candidato.ds_sit_tot_turno)"
-                :color="getSituacaoColor(candidato.ds_sit_tot_turno)"
-                size="x-small"
-                class="mb-1"
-              >
-                {{ formatSituacao(candidato.ds_sit_tot_turno) }}
-              </v-chip>
-              <p class="text-body-2 font-weight-bold mb-0">
-                {{ formatNumber(candidato.qt_votos_nominais) }} votos
-              </p>
-              <p class="text-caption text-medium-emphasis mb-0">
-                {{ candidato.ano_eleicao }}
-              </p>
-            </div>
-          </v-card-text>
-        </v-card>
+          :candidato="candidato"
+          variant="card"
+        />
       </div>
 
       <!-- Error -->

@@ -4,9 +4,45 @@ export default defineNuxtConfig({
 
   modules: [
     'vuetify-nuxt-module',
+    '@nuxt/image',
   ],
 
   devtools: { enabled: true },
+
+  // Experimental features para melhor performance
+  experimental: {
+    // Habilita controle granular do cache para getCachedData
+    granularCachedData: true,
+  },
+
+  // Configuração do @nuxt/image para otimização e cache
+  image: {
+    // Qualidade padrão das imagens
+    quality: 85,
+    // Presets reutilizáveis para logos de partidos (mantém PNG para transparência)
+    presets: {
+      partido: {
+        modifiers: {
+          width: 48,
+          height: 48,
+          fit: 'inside',
+          quality: 85,
+        },
+      },
+      partidoSmall: {
+        modifiers: {
+          width: 40,
+          height: 40,
+          fit: 'inside',
+          quality: 85,
+        },
+      },
+    },
+    // Cache de 1 ano para imagens otimizadas
+    ipx: {
+      maxAge: 60 * 60 * 24 * 365,
+    },
+  },
 
   // SEO Global Configuration
   app: {

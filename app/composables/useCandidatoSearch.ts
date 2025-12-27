@@ -1,4 +1,4 @@
-import type { AnoEleicao, Estado } from '~/data/eleicoes'
+import type { AnoEleicao, Cargo, Estado } from '~/data/eleicoes'
 
 import { PostgrestClient } from '@supabase/postgrest-js'
 
@@ -24,6 +24,7 @@ export interface SearchFilters {
   uf: Estado | null
   ano: AnoEleicao | null
   cidade: string | null
+  cargo: Cargo | null
 }
 
 // Opções de configuração
@@ -54,6 +55,7 @@ export function useCandidatoSearch(options: UseCandidatoSearchOptions = {}) {
     uf: options.initialFilters?.uf ?? null,
     ano: options.initialFilters?.ano ?? null,
     cidade: options.initialFilters?.cidade ?? null,
+    cargo: options.initialFilters?.cargo ?? null,
   })
 
   // Computed: É eleição municipal?
@@ -67,6 +69,8 @@ export function useCandidatoSearch(options: UseCandidatoSearchOptions = {}) {
     if (filters.ano)
       count++
     if (filters.cidade)
+      count++
+    if (filters.cargo)
       count++
     return count
   })
@@ -171,6 +175,9 @@ export function useCandidatoSearch(options: UseCandidatoSearchOptions = {}) {
       if (filters.ano) {
         query = query.eq('ano_eleicao', filters.ano)
       }
+      if (filters.cargo) {
+        query = query.eq('ds_cargo', filters.cargo)
+      }
 
       query = query
         .order(votosField, { ascending: false })
@@ -219,11 +226,13 @@ export function useCandidatoSearch(options: UseCandidatoSearchOptions = {}) {
       filters.uf = null
       filters.ano = null
       filters.cidade = null
+      filters.cargo = null
     }
     else {
       // Para busca por cidade, mantém UF
       filters.ano = null
       filters.cidade = null
+      filters.cargo = null
     }
   }
 

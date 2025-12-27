@@ -12,6 +12,9 @@ const props = defineProps<{
   totalVotos: number
 }>()
 
+// Estado de carregamento interno para transição suave
+const isReady = ref(false)
+
 // Mostrar apenas top 10 inicialmente
 const showAll = ref(false)
 const displayLimit = 10
@@ -31,6 +34,22 @@ const maxPercentual = computed(() => {
     return 100
   return props.municipios[0]?.percentual ?? 100
 })
+
+// Renderização lazy: aguardar próximo tick para não bloquear UI
+onMounted(() => {
+  // Usar requestIdleCallback para renderizar quando browser estiver idle
+  if (typeof requestIdleCallback !== 'undefined') {
+    requestIdleCallback(() => {
+      isReady.value = true
+    })
+  }
+  else {
+    // Fallback para browsers sem suporte
+    setTimeout(() => {
+      isReady.value = true
+    }, 50)
+  }
+})
 </script>
 
 <template>
@@ -42,7 +61,14 @@ const maxPercentual = computed(() => {
       Distribuição Geográfica de Votos
     </p>
 
-    <v-card v-if="municipios.length === 0" variant="outlined" rounded="lg">
+    <!-- Skeleton loader enquanto não está pronto -->
+    <v-card v-if="!isReady" variant="outlined" rounded="lg">
+      <v-card-text class="pa-4">
+        <v-skeleton-loader type="list-item-avatar, list-item-avatar, list-item-avatar" />
+      </v-card-text>
+    </v-card>
+
+    <v-card v-else-if="municipios.length === 0" variant="outlined" rounded="lg">
       <v-card-text class="text-center text-medium-emphasis py-6">
         <v-icon size="32" class="mb-2">
           mdi-map-marker-off

@@ -13,11 +13,11 @@ const favorito = computed(() => isFavorito(slug.value))
 // Parse do slug para extrair UF e nome
 const parsedSlug = computed(() => parseCandidatoSlug(slug.value))
 
-// Buscar dados do candidato
+// Buscar dados do candidato (lazy para não bloquear navegação)
 const runtimeConfig = useRuntimeConfig()
 const apiUrl = runtimeConfig.public.postgrestUrl as string
 
-const { data: candidatoData, status, error } = await useAsyncData(
+const { data: candidatoData, status, error } = await useLazyAsyncData(
   `candidato-${slug.value}`,
   async () => {
     // Retorna null se o slug for inválido
@@ -35,10 +35,24 @@ const { data: candidatoData, status, error } = await useAsyncData(
     const nomeParts = nomeSlug.split('-')
     const primeiroNome = nomeParts[0] || ''
 
+    // OTIMIZAÇÃO: Selecionar APENAS os campos necessários (antes trazia 6.85 MB com select=*)
+    // Campos reduzidos de ~40 para 8 = redução de ~80% no tráfego
+    const camposNecessarios = [
+      'nm_candidato',
+      'nm_urna_candidato',
+      'sg_partido',
+      'ds_cargo',
+      'ano_eleicao',
+      'nr_turno',
+      'ds_sit_tot_turno',
+      'qt_votos_nominais',
+      'nm_municipio',
+    ].join(',')
+
     // Busca ampla por UF e primeiro nome (para cobrir variações com acento)
     const { data, error } = await client
       .from('votacao_candidato_munzona')
-      .select('*')
+      .select(camposNecessarios)
       .eq('sg_uf', uf)
       .ilike('nm_urna_candidato', `${primeiroNome.charAt(0).toUpperCase()}%`)
       .order('ano_eleicao', { ascending: false })
@@ -149,6 +163,15 @@ const { data: candidatoData, status, error } = await useAsyncData(
       },
     }
   },
+  {
+    // Cache inteligente: dados eleitorais raramente mudam
+    getCachedData(key, nuxtApp, ctx) {
+      // Sempre usar cache exceto em refresh manual
+      if (ctx.cause === 'refresh:manual') return undefined
+      // Verificar cache do payload (SSR) ou static
+      return nuxtApp.payload.data[key] ?? nuxtApp.static.data[key]
+    },
+  },
 )
 
 // SEO Meta - título dinâmico baseado nos dados do candidato
@@ -192,6 +215,26 @@ function handleToggleFavorito() {
     cargo: candidatoData.value.eleicoes[0]?.ds_cargo,
   })
 }
+
+// Compartilhar no WhatsApp
+function shareWhatsApp() {
+  if (!candidatoData.value) return
+
+  const { nm_urna_candidato, sg_uf, stats } = candidatoData.value
+  const url = `${window.location.origin}/candidato/${slug.value}`
+
+  const text = `📊 *${nm_urna_candidato}* (${sg_uf})
+
+📥 ${stats.total_votos.toLocaleString('pt-BR')} votos totais
+🏆 ${stats.vitorias} eleições vencidas
+🗳️ ${stats.anos_ativo.length} eleições disputadas
+
+Confira o histórico eleitoral completo:
+${url}`
+
+  const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(text)}`
+  window.open(whatsappUrl, '_blank')
+}
 </script>
 
 <template>
@@ -204,6 +247,12 @@ function handleToggleFavorito() {
       </v-app-bar-title>
 
       <template #append>
+        <v-btn
+          icon="mdi-whatsapp"
+          color="success"
+          variant="text"
+          @click="shareWhatsApp"
+        />
         <v-btn
           :icon="favorito ? 'mdi-star' : 'mdi-star-outline'"
           :color="favorito ? 'warning' : undefined"
@@ -351,8 +400,8 @@ function handleToggleFavorito() {
         </div>
       </div>
 
-      <!-- Distribuição Geográfica -->
-      <CandidatoGeografia
+      <!-- Distribuição Geográfica (lazy - carrega independente) -->
+      <LazyCandidatoGeografia
         :municipios="candidatoData.municipiosRanking"
         :total-votos="candidatoData.stats.total_votos"
       />
