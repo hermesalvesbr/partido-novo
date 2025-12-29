@@ -91,20 +91,22 @@ export default defineNuxtConfig({
 
   // Route rules para cache otimizado (SWR - Stale While Revalidate)
   routeRules: {
-    // API de candidato: cache de 1h com SWR
-    '/api/candidato': {
-      cache: {
-        maxAge: 60 * 60, // 1 hora
-        staleMaxAge: 60 * 60 * 24, // Serve stale por até 24h enquanto revalida
-        swr: true,
-      },
-    },
-    // Página de candidato: ISR com cache de 1h
-    '/candidato/**': {
-      isr: 60 * 60, // Revalida a cada 1 hora
-    },
+    // API de candidato: disable cache for debugging
+    // '/api/candidato': {
+    //   cache: {
+    //     maxAge: 60 * 60, // 1 hora
+    //     staleMaxAge: 60 * 60 * 24, // Serve stale por até 24h enquanto revalida
+    //     swr: true,
+    //   },
+    // },
+    // Página de candidato: disable cache for debugging
+    // '/candidato/**': {
+    //   isr: 60 * 60, // Revalida a cada 1 hora
+    // },
   },
-
+  devServer: {
+    port: 3008,
+  },
   runtimeConfig: {
     // Server-only (private) - Set via environment variables
     // NUXT_DATABASE_URL, NUXT_PG_HOST, NUXT_PG_PORT, NUXT_PG_USER, NUXT_PG_PASSWORD, NUXT_PG_DATABASE

@@ -46,6 +46,12 @@ interface CandidatoResponse {
     vitorias: number
     derrotas: number
   }
+  debug?: any
+}
+
+interface RankingResult {
+  entries: { nm_municipio: string, total_votos: number }[]
+  debug?: any
 }
 
 /**
@@ -143,18 +149,84 @@ export default defineCachedEventHandler(async (event) => {
   }
 
   // A view mv_votos_candidato já agrupa por candidato corretamente
-  return buildResponse(records, uf)
+
+  // Buscar ranking de municípios (agora necessário para o componente Geografia)
+  const sqCandidatos = records.map(r => r.sq_candidato).filter(Boolean)
+
+  // Reverted to Fetch PostgREST because direct SQL is failing in this env
+  const { entries: municipiosRanking } = await fetchMunicipiosRanking(postgrestUrl, sqCandidatos)
+
+  // Calcular percentual
+  const totalVotosGeral = records.reduce((acc, r) => acc + r.total_votos, 0)
+
+  const rankingComPercentual = municipiosRanking.map(m => ({
+    ...m,
+    percentual: totalVotosGeral > 0 ? (m.total_votos / totalVotosGeral) * 100 : 0,
+  }))
+
+  return buildResponse(records, uf, rankingComPercentual)
 }, {
   maxAge: 60 * 60, // 1 hora
   getKey: (event) => {
     const query = getQuery(event)
-    // v2: usando mv_votos_candidato com busca por nome de urna
-    return `candidato:v2:${query.slug || 'unknown'}`
+    // v9: final fix
+    return `candidato:v9:${query.slug || 'unknown'}`
   },
   swr: true, // Stale-while-revalidate para resposta instantânea
 })
 
-function buildResponse(records: VotosCandidatoRecord[], uf: string): CandidatoResponse {
+async function fetchMunicipiosRanking(baseUrl: string, sqCandidatos: number[]): Promise<RankingResult> {
+  const debugInfo: any = { sqCandidatos, method: 'fetch-postgrest' }
+  if (sqCandidatos.length === 0)
+    return { entries: [], debug: debugInfo }
+
+  try {
+    const idsStr = sqCandidatos.join(',')
+    // Note: sorting by qt_votos_nominais desc at DB level
+    const url = `${baseUrl}/votacao_candidato_munzona?sq_candidato=in.(${idsStr})&select=nm_municipio,qt_votos_nominais&order=qt_votos_nominais.desc`
+
+    debugInfo.url = url
+
+    const response = await fetch(url)
+    debugInfo.status = response.status
+
+    if (!response.ok) {
+      debugInfo.errorText = await response.text()
+      console.error('PostgREST error fetching ranking:', debugInfo.errorText)
+      return { entries: [], debug: debugInfo }
+    }
+
+    const data = await response.json() as { nm_municipio: string, qt_votos_nominais: number }[]
+    debugInfo.dataLength = data.length
+
+    // Aggregate by municipality (client-side aggregation)
+    const mapa = new Map<string, number>()
+
+    for (const item of data) {
+      const atual = mapa.get(item.nm_municipio) || 0
+      mapa.set(item.nm_municipio, atual + item.qt_votos_nominais)
+    }
+
+    const entries = Array.from(mapa.entries())
+      .map(([nm_municipio, total_votos]) => ({ nm_municipio, total_votos }))
+      .sort((a, b) => b.total_votos - a.total_votos)
+
+    debugInfo.aggregatedCount = entries.length
+
+    return { entries, debug: debugInfo }
+  }
+  catch (e: any) {
+    debugInfo.error = e.message || String(e)
+    console.error('Fetch error:', e)
+    return { entries: [], debug: debugInfo }
+  }
+}
+
+function buildResponse(
+  records: VotosCandidatoRecord[],
+  uf: string,
+  municipiosRanking: { nm_municipio: string, total_votos: number, percentual: number }[],
+): CandidatoResponse {
   const firstRecord = records[0]!
 
   // Converte para formato de eleições
@@ -183,7 +255,7 @@ function buildResponse(records: VotosCandidatoRecord[], uf: string): CandidatoRe
     nm_urna_candidato: firstRecord.nm_urna_candidato,
     sg_uf: uf,
     eleicoes,
-    municipiosRanking: [], // Não disponível na view agregada
+    municipiosRanking,
     stats: {
       total_votos: totalVotos,
       anos_ativo: anosAtivo,
