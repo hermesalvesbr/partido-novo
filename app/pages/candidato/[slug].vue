@@ -1,18 +1,33 @@
 <script setup lang="ts">
-import { formatNumber, formatSituacao, getSituacaoColor } from '~/utils/formatters'
-import { parseCandidatoSlug, slugify } from '~/utils/slug'
+import { formatNumber } from '~/utils/formatters'
 
 // Interface para os dados do candidato vindos da API
-interface CandidatoRecord {
+interface CandidatoData {
   nm_candidato: string
   nm_urna_candidato: string
-  sg_partido: string
-  ds_cargo: string
-  ano_eleicao: number
-  nr_turno: number
-  ds_sit_tot_turno: string
-  qt_votos_nominais: number
-  nm_municipio: string
+  sg_uf: string
+  eleicoes: {
+    ano_eleicao: number
+    ds_cargo: string
+    sg_partido: string
+    nr_turno: number
+    ds_sit_tot_turno: string
+    total_votos: number
+    municipios_count: number
+  }[]
+  municipiosRanking: {
+    nm_municipio: string
+    total_votos: number
+    percentual: number
+  }[]
+  stats: {
+    total_votos: number
+    anos_ativo: number[]
+    partidos: string[]
+    cargos: string[]
+    vitorias: number
+    derrotas: number
+  }
 }
 
 // Pega o slug da rota
@@ -23,181 +38,12 @@ const slug = computed(() => route.params.slug as string)
 const { isFavorito, toggleFavorito } = useFavoritos()
 const favorito = computed(() => isFavorito(slug.value))
 
-// Parse do slug para extrair UF e nome
-const parsedSlug = computed(() => parseCandidatoSlug(slug.value))
-
-// Composable para obter candidato pré-selecionado (passado via navegação)
-const { getCandidatoBySlug } = useCandidatoSelecionado()
-
-// Buscar dados do candidato (lazy para não bloquear navegação)
-const runtimeConfig = useRuntimeConfig()
-const apiUrl = runtimeConfig.public.postgrestUrl as string
-
-const { data: candidatoData, status, error } = await useLazyAsyncData(
+// Buscar dados do candidato via server API (lazy para não bloquear navegação)
+const { data: candidatoData, status, error } = await useLazyAsyncData<CandidatoData>(
   `candidato-${slug.value}`,
-  async () => {
-    // Retorna null se o slug for inválido
-    if (!parsedSlug.value) {
-      return null
-    }
-
-    const { uf, nomeSlug } = parsedSlug.value
-
-    // Tenta obter o candidato do estado compartilhado (navegação via CandidatoCard)
-    // Isso evita a busca complexa por palavras distintivas
-    const candidatoPreSelecionado = getCandidatoBySlug(nomeSlug)
-
-    const { PostgrestClient } = await import('@supabase/postgrest-js')
-    const client = new PostgrestClient(apiUrl)
-
-    // OTIMIZAÇÃO: Selecionar APENAS os campos necessários
-    const camposNecessarios = [
-      'nm_candidato',
-      'nm_urna_candidato',
-      'sg_partido',
-      'ds_cargo',
-      'ano_eleicao',
-      'nr_turno',
-      'ds_sit_tot_turno',
-      'qt_votos_nominais',
-      'nm_municipio',
-    ].join(',')
-
-    // OTIMIZAÇÃO: Se temos o candidato pré-selecionado, usa o nome exato para busca
-    // Isso é muito mais eficiente que buscar por palavras distintivas
-    let nomeParaBusca: string
-
-    if (candidatoPreSelecionado) {
-      // Busca exata pelo nome completo (passado via navegação)
-      nomeParaBusca = candidatoPreSelecionado.nm_candidato
-    }
-    else {
-      // Fallback: Estratégia de busca por palavras distintivas (acesso direto via URL)
-      const nomeParts = nomeSlug.split('-')
-      const palavrasDistintivas = nomeParts
-        .filter(p => p.length >= 4)
-        .sort((a, b) => b.length - a.length)
-        .slice(0, 3)
-
-      const palavrasParaBusca = palavrasDistintivas.length > 0
-        ? palavrasDistintivas
-        : nomeParts.slice(0, 3)
-
-      nomeParaBusca = palavrasParaBusca[0]?.toUpperCase() || ''
-    }
-
-    // Busca por nome completo (exato se pré-selecionado, ou por palavra distintiva)
-    const { data, error } = await client
-      .from('votacao_candidato_munzona')
-      .select(camposNecessarios)
-      .eq('sg_uf', uf)
-      .ilike('nm_candidato', candidatoPreSelecionado ? nomeParaBusca : `%${nomeParaBusca}%`)
-      .order('ano_eleicao', { ascending: false })
-      .order('qt_votos_nominais', { ascending: false })
-      .limit(candidatoPreSelecionado ? 10000 : 2000)
-
-    if (error) {
-      throw error
-    }
-
-    // Filtra pelo slug exato do nome completo (slugify remove acentos, garantindo match)
-    const rawData = data as unknown as CandidatoRecord[]
-    const candidatoRecords = (rawData || []).filter((d) => {
-      return slugify(d.nm_candidato) === nomeSlug
-    })
-
-    if (candidatoRecords.length === 0) {
-      return null
-    }
-
-    // Agrupa por ano/cargo para somar votos
-    const eleicoesMapa = new Map<string, {
-      ano_eleicao: number
-      ds_cargo: string
-      sg_partido: string
-      nr_turno: number
-      ds_sit_tot_turno: string
-      total_votos: number
-      municipios: Set<string>
-    }>()
-
-    // Agrupa votos por município (para componente de geografia)
-    const municipiosMapa = new Map<string, number>()
-
-    let nmCandidato = ''
-    let nmUrnaCandidato = ''
-
-    for (const r of candidatoRecords) {
-      nmCandidato = r.nm_candidato
-      nmUrnaCandidato = r.nm_urna_candidato
-
-      const key = `${r.ano_eleicao}-${r.ds_cargo}-${r.nr_turno}`
-      const existing = eleicoesMapa.get(key)
-
-      if (existing) {
-        existing.total_votos += r.qt_votos_nominais || 0
-        existing.municipios.add(r.nm_municipio)
-      }
-      else {
-        eleicoesMapa.set(key, {
-          ano_eleicao: r.ano_eleicao,
-          ds_cargo: r.ds_cargo,
-          sg_partido: r.sg_partido,
-          nr_turno: r.nr_turno,
-          ds_sit_tot_turno: r.ds_sit_tot_turno,
-          total_votos: r.qt_votos_nominais || 0,
-          municipios: new Set([r.nm_municipio]),
-        })
-      }
-
-      // Agregar votos por município
-      const votosAtual = municipiosMapa.get(r.nm_municipio) || 0
-      municipiosMapa.set(r.nm_municipio, votosAtual + (r.qt_votos_nominais || 0))
-    }
-
-    // Converte para array ordenado por ano
-    const eleicoes = Array.from(eleicoesMapa.values())
-      .map(e => ({
-        ...e,
-        municipios_count: e.municipios.size,
-      }))
-      .sort((a, b) => b.ano_eleicao - a.ano_eleicao)
-
-    // Estatísticas gerais
-    const totalVotos = eleicoes.reduce((acc, e) => acc + e.total_votos, 0)
-    const anosAtivo = [...new Set(eleicoes.map(e => e.ano_eleicao))]
-    const partidosUsados = [...new Set(eleicoes.map(e => e.sg_partido))]
-    const cargosDisputados = [...new Set(eleicoes.map(e => e.ds_cargo))]
-    const vitorias = eleicoes.filter(e =>
-      e.ds_sit_tot_turno.toUpperCase().includes('ELEITO')
-      && !e.ds_sit_tot_turno.toUpperCase().includes('NÃO ELEITO'),
-    ).length
-
-    // Converter mapa de municípios para array ordenado
-    const municipiosRanking = Array.from(municipiosMapa.entries())
-      .map(([nm_municipio, total_votos]) => ({
-        nm_municipio,
-        total_votos,
-        percentual: totalVotos > 0 ? (total_votos / totalVotos) * 100 : 0,
-      }))
-      .sort((a, b) => b.total_votos - a.total_votos)
-
-    return {
-      nm_candidato: nmCandidato,
-      nm_urna_candidato: nmUrnaCandidato,
-      sg_uf: parsedSlug.value?.uf || '',
-      eleicoes,
-      municipiosRanking,
-      stats: {
-        total_votos: totalVotos,
-        anos_ativo: anosAtivo,
-        partidos: partidosUsados,
-        cargos: cargosDisputados,
-        vitorias,
-        derrotas: eleicoes.length - vitorias,
-      },
-    }
-  },
+  () => $fetch('/api/candidato', {
+    query: { slug: slug.value },
+  }),
   {
     // Cache inteligente: dados eleitorais raramente mudam
     getCachedData(key, nuxtApp, ctx) {
@@ -444,67 +290,10 @@ ${url}`
         :total-votos="candidatoData.stats.total_votos"
       />
 
-      <!-- Histórico de Eleições -->
-      <div class="px-4 pb-4">
-        <p class="text-overline text-medium-emphasis mb-2">
-          Histórico de Eleições
-        </p>
-
-        <v-timeline side="end" density="compact">
-          <v-timeline-item
-            v-for="eleicao in candidatoData.eleicoes"
-            :key="`${eleicao.ano_eleicao}-${eleicao.ds_cargo}`"
-            :dot-color="getSituacaoColor(eleicao.ds_sit_tot_turno)"
-            size="small"
-          >
-            <v-card variant="flat" rounded="lg">
-              <v-card-text class="pa-3">
-                <div class="d-flex justify-space-between align-start mb-2">
-                  <div>
-                    <p class="text-body-1 font-weight-medium mb-0">
-                      {{ eleicao.ano_eleicao }}
-                    </p>
-                    <p class="text-caption text-medium-emphasis mb-0">
-                      {{ eleicao.ds_cargo }} · {{ eleicao.sg_partido }}
-                    </p>
-                  </div>
-                  <v-chip
-                    v-if="formatSituacao(eleicao.ds_sit_tot_turno)"
-                    :color="getSituacaoColor(eleicao.ds_sit_tot_turno)"
-                    size="x-small"
-                  >
-                    {{ formatSituacao(eleicao.ds_sit_tot_turno) }}
-                  </v-chip>
-                </div>
-
-                <div class="d-flex ga-4">
-                  <div>
-                    <p class="text-body-2 font-weight-bold mb-0">
-                      {{ formatNumber(eleicao.total_votos) }}
-                    </p>
-                    <p class="text-caption text-medium-emphasis mb-0">
-                      votos
-                    </p>
-                  </div>
-                  <div>
-                    <p class="text-body-2 font-weight-bold mb-0">
-                      {{ eleicao.municipios_count }}
-                    </p>
-                    <p class="text-caption text-medium-emphasis mb-0">
-                      municípios
-                    </p>
-                  </div>
-                  <div v-if="eleicao.nr_turno === 2">
-                    <v-chip size="x-small" color="info" variant="tonal">
-                      2º Turno
-                    </v-chip>
-                  </div>
-                </div>
-              </v-card-text>
-            </v-card>
-          </v-timeline-item>
-        </v-timeline>
-      </div>
+      <!-- Histórico de Eleições (novo componente) -->
+      <LazyCandidatoHistorico
+        :eleicoes="candidatoData.eleicoes"
+      />
     </div>
   </div>
 </template>
