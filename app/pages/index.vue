@@ -39,7 +39,13 @@ const {
   clearCidades,
 } = useCidadesFilter()
 
-const { estadoDetectado } = useGeolocalizacao()
+// Preferência de UF: prioridade cookie > geolocalização
+const {
+  ufEfetivo,
+  hasUserPreference,
+  saveUfPreference,
+  clearUfPreference,
+} = useUfPreference()
 
 // Estado local do componente (apenas UI)
 const showFilters = ref(false)
@@ -69,12 +75,28 @@ watch(searchQuery, () => {
   }
 })
 
-// Auto-preencher UF baseado na geolocalização
+// Auto-preencher UF baseado na preferência (cookie > geolocalização)
 watchEffect(() => {
-  if (estadoDetectado.value && filters.uf === null) {
-    setUf(estadoDetectado.value)
+  if (ufEfetivo.value && filters.uf === null) {
+    setUf(ufEfetivo.value)
   }
 })
+
+// Salvar preferência quando usuário selecionar UF manualmente
+watch(
+  () => filters.uf,
+  (newUf, oldUf) => {
+    // Só salva se o usuário mudou manualmente (não é null e mudou de valor)
+    // Ignora a primeira atribuição automática do ufEfetivo
+    if (newUf !== null && oldUf !== undefined) {
+      saveUfPreference(newUf)
+    }
+    // Se limpou o filtro manualmente, limpa a preferência também
+    if (newUf === null && oldUf !== null && hasUserPreference.value) {
+      clearUfPreference()
+    }
+  },
+)
 
 // Carregar cidades quando UF ou ano mudar
 watch(

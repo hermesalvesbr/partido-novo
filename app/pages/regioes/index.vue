@@ -13,7 +13,7 @@ useSeoMeta({
 
 // Composables
 const { estadoSelecionado, setEstado } = useEstadoSelecionado()
-const { estadoDetectado } = useGeolocalizacao()
+const { ufEfetivo, hasUserPreference, saveUfPreference, clearUfPreference } = useUfPreference()
 
 // Estado local para seletor (reativo para useAsyncData)
 const ufLocal = ref<Estado | null>(estadoSelecionado.value)
@@ -21,16 +21,25 @@ const ufLocal = ref<Estado | null>(estadoSelecionado.value)
 // useRegioes com ref reativa para cache eficiente via useAsyncData
 const { mesorregioes, loading, error } = useRegioes(ufLocal)
 
-// Auto-preencher UF baseado na geolocalização se não houver estado selecionado
+// Auto-preencher UF baseado na preferência (cookie > geolocalização)
 watchEffect(() => {
-  if (estadoDetectado.value && !estadoSelecionado.value && !ufLocal.value) {
-    ufLocal.value = estadoDetectado.value
+  if (ufEfetivo.value && !estadoSelecionado.value && !ufLocal.value) {
+    ufLocal.value = ufEfetivo.value
   }
 })
 
-// Sincronizar com estado global quando ufLocal mudar
-watch(ufLocal, (novoUf) => {
+// Sincronizar com estado global e salvar preferência quando ufLocal mudar
+watch(ufLocal, (novoUf, oldUf) => {
   setEstado(novoUf)
+  
+  // Salvar preferência quando usuário selecionar manualmente
+  if (novoUf !== null && oldUf !== undefined) {
+    saveUfPreference(novoUf)
+  }
+  // Limpar preferência se usuário limpou o filtro
+  if (novoUf === null && oldUf !== null && hasUserPreference.value) {
+    clearUfPreference()
+  }
 })
 
 // Nome do estado selecionado
