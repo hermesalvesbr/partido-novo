@@ -213,6 +213,10 @@ export function useCandidatoSearch() {
       if (filters.cargo) {
         query = query.eq('ds_cargo', filters.cargo)
       }
+      // Filtro de cidade (eleições municipais 2020/2024)
+      if (filters.cidade) {
+        query = query.eq('nm_municipio', filters.cidade)
+      }
 
       query = query
         .order(votosField, { ascending: false })

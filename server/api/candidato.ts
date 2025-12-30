@@ -114,32 +114,52 @@ export default defineCachedEventHandler(async (event) => {
 
   const uf = parts[0]!.toUpperCase()
   const nomeSlug = parts.slice(1).join('-')
-  const palavrasBusca = extrairPalavrasBusca(nomeSlug)
 
-  if (palavrasBusca.length === 0) {
-    throw createError({
-      statusCode: 400,
-      message: 'Nome do candidato muito curto',
-    })
-  }
+  // Reconstruir nome completo do slug para buscar por nm_candidato
+  // pe-nunes-rafael-mendes-coelho -> NUNES RAFAEL MENDES COELHO
+  const nomeCompleto = nomeSlug.toUpperCase().replace(/-/g, ' ')
 
   const config = useRuntimeConfig()
   const postgrestUrl = config.public.postgrestUrl as string
 
-  // Buscar na view materializada mv_votos_candidato (ultra-rápido!)
-  const searchTerm = palavrasBusca.join(' ')
-  const urlStr = `${postgrestUrl}/mv_votos_candidato?sg_uf=eq.${uf}&nm_urna_candidato=ilike.*${encodeURIComponent(searchTerm)}*&order=ano_eleicao.desc`
+  // Estratégia 1: Buscar por nome completo (nm_candidato) - mais preciso para slugs gerados do nome completo
+  let urlStr = `${postgrestUrl}/mv_votos_candidato?sg_uf=eq.${uf}&nm_candidato=ilike.*${encodeURIComponent(nomeCompleto)}*&order=ano_eleicao.desc`
 
-  const response = await fetch(urlStr)
+  let response = await fetch(urlStr)
+  let records: VotosCandidatoRecord[] = []
 
-  if (!response.ok) {
-    throw createError({
-      statusCode: response.status,
-      message: `Erro PostgREST: ${response.statusText}`,
-    })
+  if (response.ok) {
+    records = await response.json() as VotosCandidatoRecord[]
   }
 
-  const records = await response.json() as VotosCandidatoRecord[]
+  // Estratégia 2: Se não encontrou, tentar por nome de urna com palavras-chave
+  if (records.length === 0) {
+    const palavrasBusca = extrairPalavrasBusca(nomeSlug)
+    if (palavrasBusca.length > 0) {
+      const searchTerm = palavrasBusca.join(' ')
+      urlStr = `${postgrestUrl}/mv_votos_candidato?sg_uf=eq.${uf}&nm_urna_candidato=ilike.*${encodeURIComponent(searchTerm)}*&order=ano_eleicao.desc`
+      
+      response = await fetch(urlStr)
+      if (response.ok) {
+        records = await response.json() as VotosCandidatoRecord[]
+      }
+    }
+  }
+
+  // Estratégia 3: Tentar busca parcial pelo primeiro e último nome
+  if (records.length === 0) {
+    const partes = nomeCompleto.split(' ').filter(p => p.length >= 3)
+    if (partes.length >= 2) {
+      const primeiro = partes[0]
+      const ultimo = partes[partes.length - 1]
+      urlStr = `${postgrestUrl}/mv_votos_candidato?sg_uf=eq.${uf}&nm_candidato=ilike.*${encodeURIComponent(primeiro!)}*${encodeURIComponent(ultimo!)}*&order=ano_eleicao.desc`
+      
+      response = await fetch(urlStr)
+      if (response.ok) {
+        records = await response.json() as VotosCandidatoRecord[]
+      }
+    }
+  }
 
   if (records.length === 0) {
     throw createError({
@@ -169,8 +189,8 @@ export default defineCachedEventHandler(async (event) => {
   maxAge: 60 * 60, // 1 hora
   getKey: (event) => {
     const query = getQuery(event)
-    // v9: final fix
-    return `candidato:v9:${query.slug || 'unknown'}`
+    // v10: corrigido busca por nm_candidato
+    return `candidato:v10:${query.slug || 'unknown'}`
   },
   swr: true, // Stale-while-revalidate para resposta instantânea
 })

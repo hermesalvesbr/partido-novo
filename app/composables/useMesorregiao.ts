@@ -172,15 +172,15 @@ export function useCandidatosRegiao(
       const { PostgrestClient } = await import('@supabase/postgrest-js')
       const client = new PostgrestClient(apiUrl)
 
-      // Buscar candidatos dos municípios da região
+      // Buscar candidatos dos municípios da região (view materializada otimizada)
       let query = client
-        .from('votacao_candidato_munzona')
-        .select('nm_candidato, nm_urna_candidato, sg_partido, ds_cargo, ano_eleicao, sg_uf, qt_votos_nominais, ds_sit_tot_turno, nm_municipio, nr_turno')
+        .from('mv_votos_municipio')
+        .select('nm_candidato, nm_urna_candidato, sg_partido, ds_cargo, ano_eleicao, sg_uf, total_votos, ds_sit_tot_turno, nm_municipio, nr_turno')
         .eq('sg_uf', uf.value)
         .eq('ano_eleicao', ano.value)
         .eq('nr_turno', 1)
         .in('nm_municipio', nomesMunicipios.value)
-        .order('qt_votos_nominais', { ascending: false })
+        .order('total_votos', { ascending: false })
         .limit(5000)
 
       if (cargo.value) {
@@ -220,7 +220,7 @@ export function useCandidatosRegiao(
 
       if (mapa.has(key)) {
         const existing = mapa.get(key)!
-        existing.total_votos += Number(row.qt_votos_nominais) || 0
+        existing.total_votos += Number(row.total_votos) || 0
         if (!existing.municipios_votados.includes(String(row.nm_municipio))) {
           existing.municipios_votados.push(String(row.nm_municipio))
         }
@@ -233,7 +233,7 @@ export function useCandidatosRegiao(
           ds_cargo: String(row.ds_cargo),
           ano_eleicao: Number(row.ano_eleicao),
           sg_uf: String(row.sg_uf),
-          total_votos: Number(row.qt_votos_nominais) || 0,
+          total_votos: Number(row.total_votos) || 0,
           ds_sit_tot_turno: String(row.ds_sit_tot_turno),
           municipios_votados: [String(row.nm_municipio)],
         })
