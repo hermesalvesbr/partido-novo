@@ -140,9 +140,13 @@ function handleSearch(): void {
 }
 
 // Handler para o botão Aplicar do bottom sheet de filtros
-// Apenas fecha o bottom sheet - o usuário vai selecionar a cidade no campo principal
+// Fecha o bottom sheet e refaz a busca com os novos filtros
 function handleApplyFilters(): void {
   showFilters.value = false
+  // Refaz a busca se já tiver feito uma busca antes (tem contexto)
+  if (searched.value || searchQuery.value.trim().length >= 3) {
+    search()
+  }
 }
 
 function handleClearFilters(): void {
