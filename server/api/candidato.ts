@@ -196,13 +196,24 @@ export default defineCachedEventHandler(async (event) => {
 
   return buildResponse(records, uf, rankingComPercentual)
 }, {
-  maxAge: 60 * 60, // 1 hora
+  // Cache de 1 ano no Cloudflare KV (dados eleitorais são imutáveis após eleição)
+  maxAge: 60 * 60 * 24 * 365, // 1 ano
+  // Serve stale indefinidamente enquanto revalida em background
+  staleMaxAge: -1, // -1 = sempre serve stale e revalida em background
+  // Usa o storage 'cache' configurado no nuxt.config.ts (Cloudflare KV)
+  base: 'cache',
+  // Nome do grupo para organização no KV
+  group: 'candidato',
+  // Chave única por slug
   getKey: (event) => {
     const query = getQuery(event)
-    // v11: busca com unaccent via RPC buscar_candidato_por_slug
-    return `candidato:v11:${query.slug || 'unknown'}`
+    // v13: cache 1 ano no Cloudflare KV
+    return `v13:${query.slug || 'unknown'}`
   },
-  swr: true, // Stale-while-revalidate para resposta instantânea
+  // Stale-while-revalidate para resposta instantânea
+  swr: true,
+  // NOTA: Erros (throw createError) NÃO são cacheados pelo Nitro automaticamente
+  // Apenas respostas de sucesso (return) são persistidas no KV
 })
 
 async function fetchMunicipiosRanking(baseUrl: string, sqCandidatos: number[]): Promise<RankingResult> {

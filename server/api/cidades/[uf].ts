@@ -2,8 +2,8 @@ import { PostgrestClient } from '@supabase/postgrest-js'
 
 /**
  * API para listar cidades por UF
- * Usa defineCachedEventHandler para cache no servidor (Nitro)
- * Cache de 1 hora (3600 segundos) - cidades raramente mudam
+ * Usa defineCachedEventHandler para cache no Cloudflare KV
+ * Cache de 1 ano - cidades NUNCA mudam (são definidas pelo IBGE)
  */
 export default defineCachedEventHandler(
   async (event) => {
@@ -38,11 +38,18 @@ export default defineCachedEventHandler(
     return uniqueCidades.filter(Boolean) as string[]
   },
   {
-    // Cache por 1 hora (cidades raramente mudam)
-    maxAge: 60 * 60,
+    // Cache de 1 ano no Cloudflare KV (cidades nunca mudam)
+    maxAge: 60 * 60 * 24 * 365, // 1 ano
+    // Serve stale indefinidamente enquanto revalida em background
+    staleMaxAge: -1,
+    // Usa o storage 'cache' configurado no nuxt.config.ts (Cloudflare KV)
+    base: 'cache',
+    // Nome do grupo para organização no KV
+    group: 'cidades',
     // Chave única por UF
-    getKey: event => `cidades-${getRouterParam(event, 'uf')?.toUpperCase()}`,
+    getKey: event => `v1:${getRouterParam(event, 'uf')?.toUpperCase() || 'unknown'}`,
     // Stale-while-revalidate: serve cache antigo enquanto atualiza em background
     swr: true,
+    // NOTA: Erros (throw createError) NÃO são cacheados pelo Nitro automaticamente
   },
 )

@@ -87,6 +87,21 @@ export default defineNuxtConfig({
   // Cloudflare Pages deployment
   nitro: {
     preset: 'cloudflare-pages',
+    // Storage para cache usando Cloudflare KV (HTTP driver para acesso universal)
+    storage: {
+      cache: {
+        driver: 'cloudflare-kv-http',
+        accountId: process.env.NUXT_CLOUDFLARE_KV_ACCOUNT_ID,
+        namespaceId: process.env.NUXT_CLOUDFLARE_KV_NAMESPACE_ID,
+        apiToken: process.env.NUXT_CLOUDFLARE_KV_TOKEN,
+      },
+    },
+    // Fallback para memória em desenvolvimento
+    devStorage: {
+      cache: {
+        driver: 'memory',
+      },
+    },
   },
 
   // Route rules para cache otimizado (SWR - Stale While Revalidate)
@@ -116,6 +131,12 @@ export default defineNuxtConfig({
     pgUser: '',
     pgPassword: '',
     pgDatabase: '',
+    // Cloudflare KV credentials (NUXT_CLOUDFLARE_KV_*)
+    cloudflareKvAccountId: '',
+    cloudflareKvNamespaceId: '',
+    cloudflareKvToken: '',
+    // Token para invalidar cache (NUXT_CACHE_INVALIDATE_TOKEN)
+    cacheInvalidateToken: '',
     // Public (exposed to client)
     public: {
       postgrestUrl: 'https://apinovo.softagon.app',
