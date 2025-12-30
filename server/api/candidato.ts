@@ -122,8 +122,9 @@ export default defineCachedEventHandler(async (event) => {
   const config = useRuntimeConfig()
   const postgrestUrl = config.public.postgrestUrl as string
 
-  // Estratégia 1: Buscar por nome completo (nm_candidato) - mais preciso para slugs gerados do nome completo
-  let urlStr = `${postgrestUrl}/mv_votos_candidato?sg_uf=eq.${uf}&nm_candidato=ilike.*${encodeURIComponent(nomeCompleto)}*&order=ano_eleicao.desc`
+  // Estratégia 1: Usar RPC com normalize_search (ignora acentos)
+  // Isso permite encontrar "ANDRÉ" quando o slug é "andre"
+  let urlStr = `${postgrestUrl}/rpc/buscar_candidato_por_slug?p_uf=${uf}&p_nome_slug=${encodeURIComponent(nomeCompleto)}`
 
   let response = await fetch(urlStr)
   let records: VotosCandidatoRecord[] = []
@@ -132,13 +133,22 @@ export default defineCachedEventHandler(async (event) => {
     records = await response.json() as VotosCandidatoRecord[]
   }
 
-  // Estratégia 2: Se não encontrou, tentar por nome de urna com palavras-chave
+  // Estratégia 2: Fallback para ILIKE se RPC falhar ou não existir
+  if (records.length === 0) {
+    urlStr = `${postgrestUrl}/mv_votos_candidato?sg_uf=eq.${uf}&nm_candidato=ilike.*${encodeURIComponent(nomeCompleto)}*&order=ano_eleicao.desc`
+    response = await fetch(urlStr)
+    if (response.ok) {
+      records = await response.json() as VotosCandidatoRecord[]
+    }
+  }
+
+  // Estratégia 3: Se não encontrou, tentar por nome de urna com palavras-chave
   if (records.length === 0) {
     const palavrasBusca = extrairPalavrasBusca(nomeSlug)
     if (palavrasBusca.length > 0) {
       const searchTerm = palavrasBusca.join(' ')
       urlStr = `${postgrestUrl}/mv_votos_candidato?sg_uf=eq.${uf}&nm_urna_candidato=ilike.*${encodeURIComponent(searchTerm)}*&order=ano_eleicao.desc`
-      
+
       response = await fetch(urlStr)
       if (response.ok) {
         records = await response.json() as VotosCandidatoRecord[]
@@ -153,7 +163,7 @@ export default defineCachedEventHandler(async (event) => {
       const primeiro = partes[0]
       const ultimo = partes[partes.length - 1]
       urlStr = `${postgrestUrl}/mv_votos_candidato?sg_uf=eq.${uf}&nm_candidato=ilike.*${encodeURIComponent(primeiro!)}*${encodeURIComponent(ultimo!)}*&order=ano_eleicao.desc`
-      
+
       response = await fetch(urlStr)
       if (response.ok) {
         records = await response.json() as VotosCandidatoRecord[]
@@ -189,8 +199,8 @@ export default defineCachedEventHandler(async (event) => {
   maxAge: 60 * 60, // 1 hora
   getKey: (event) => {
     const query = getQuery(event)
-    // v10: corrigido busca por nm_candidato
-    return `candidato:v10:${query.slug || 'unknown'}`
+    // v11: busca com unaccent via RPC buscar_candidato_por_slug
+    return `candidato:v11:${query.slug || 'unknown'}`
   },
   swr: true, // Stale-while-revalidate para resposta instantânea
 })

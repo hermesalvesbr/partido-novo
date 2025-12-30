@@ -38,19 +38,21 @@ interface SearchState {
 }
 
 // Estado inicial
-const defaultState = (): SearchState => ({
-  searched: false,
-  candidatos: [],
-  searchQuery: '',
-  searchType: 'candidato',
-  filters: {
-    uf: null,
-    ano: null,
-    cidade: null,
-    cargo: null,
-  },
-  error: '',
-})
+function defaultState(): SearchState {
+  return {
+    searched: false,
+    candidatos: [],
+    searchQuery: '',
+    searchType: 'candidato',
+    filters: {
+      uf: null,
+      ano: null,
+      cidade: null,
+      cargo: null,
+    },
+    error: '',
+  }
+}
 
 /**
  * Composable para busca de candidatos eleitorais
@@ -112,15 +114,27 @@ export function useCandidatoSearch() {
 
   // Computed: Pode buscar?
   const canSearch = computed(() => {
-    const hasQuery = state.value.searchQuery.trim().length >= 3
-    const hasFilters = filters.uf !== null || filters.ano !== null || filters.cidade !== null
+    // ========================================
+    // BUSCA POR CANDIDATO
+    // ========================================
+    if (state.value.searchType === 'candidato') {
+      // Precisa de pelo menos 3 caracteres ou filtros aplicados
+      const hasQuery = state.value.searchQuery.trim().length >= 3
+      const hasFilters = filters.uf !== null || filters.ano !== null || filters.cidade !== null
+      return hasQuery || hasFilters
+    }
 
-    // Busca por cidade exige UF
-    if (state.value.searchType === 'cidade' && !filters.uf) {
+    // ========================================
+    // BUSCA POR CIDADE
+    // ========================================
+    // Precisa de UF obrigatório + cidade selecionada no v-select
+    if (!filters.uf) {
       return false
     }
 
-    return hasQuery || hasFilters
+    // Precisa ter uma cidade selecionada (valor exato do v-select)
+    const hasCidadeSelecionada = state.value.searchQuery.trim().length > 0
+    return hasCidadeSelecionada
   })
 
   // Placeholder dinâmico
@@ -172,6 +186,8 @@ export function useCandidatoSearch() {
 
   /**
    * Executa a busca de candidatos
+   * - Busca por candidato: usa RPC fuzzy com pg_trgm (permite erro de digitação)
+   * - Busca por cidade: usa eq com nome exato (v-select garante integridade)
    */
   async function search(): Promise<void> {
     if (!canSearch.value)
@@ -182,61 +198,85 @@ export function useCandidatoSearch() {
     state.value.error = ''
 
     try {
-      const tableName = 'votacao_candidato_munzona'
-      const votosField = 'qt_votos_nominais'
-      const selectFields = `nm_candidato, nm_urna_candidato, sg_partido, ds_cargo, ano_eleicao, sg_uf, ${votosField}, ds_sit_tot_turno, nr_turno, nm_municipio`
+      // ========================================
+      // BUSCA POR CANDIDATO (fuzzy com pg_trgm)
+      // ========================================
+      if (state.value.searchType === 'candidato') {
+        const term = state.value.searchQuery.trim()
 
-      let query = client
-        .from(tableName)
-        .select(selectFields)
+        // Precisa de pelo menos 3 caracteres para busca fuzzy
+        if (term.length >= 3) {
+          // Construir URL para RPC via GET (evita timeout do POST)
+          const params = new URLSearchParams()
+          params.set('p_termo', term)
+          if (filters.uf) params.set('p_uf', filters.uf)
+          if (filters.ano) params.set('p_ano', String(filters.ano))
+          if (filters.cargo) params.set('p_cargo', filters.cargo)
+          if (filters.cidade) params.set('p_cidade', filters.cidade)
+          params.set('p_limite', '500')
 
-      // Busca por termo
-      const term = state.value.searchQuery.trim()
-      if (term.length >= 3) {
-        const termPattern = `%${term.replace(/\s+/g, '%')}%`
+          const response = await fetch(`${apiUrl}/rpc/buscar_candidato_fuzzy?${params.toString()}`)
+          
+          if (!response.ok) {
+            throw new Error(`Erro na busca: ${response.status}`)
+          }
 
-        if (state.value.searchType === 'candidato') {
-          query = query.ilike('nm_urna_candidato', termPattern)
+          const rawData = await response.json() as Record<string, unknown>[]
+          state.value.candidatos = aggregateCandidatos(rawData)
         }
         else {
-          query = query.ilike('nm_municipio', termPattern)
+          // Sem termo de busca, retorna vazio
+          state.value.candidatos = []
         }
       }
-
-      // Aplicar filtros
-      if (filters.uf) {
-        query = query.eq('sg_uf', filters.uf)
-      }
-      if (filters.ano) {
-        query = query.eq('ano_eleicao', filters.ano)
-      }
-      if (filters.cargo) {
-        query = query.eq('ds_cargo', filters.cargo)
-      }
-      // Filtro de cidade (eleições municipais 2020/2024)
-      if (filters.cidade) {
-        query = query.eq('nm_municipio', filters.cidade)
-      }
-
-      query = query
-        .order(votosField, { ascending: false })
-        .limit(500)
-
-      const { data, error: err } = await query
-
-      if (err)
-        throw err
-
-      const rawData = (data || []) as unknown as Record<string, unknown>[]
-
-      if (state.value.searchType === 'candidato') {
-        state.value.candidatos = aggregateCandidatos(rawData)
-      }
+      // ========================================
+      // BUSCA POR CIDADE (nome exato via v-select)
+      // ========================================
       else {
-        state.value.candidatos = rawData.map(d => ({
-          ...d,
-          qt_votos_nominais: (d.qt_votos_nominais as number) || 0,
-        })) as CandidatoBusca[]
+        // searchQuery contém o nome exato da cidade (selecionado no v-select)
+        const cidadeSelecionada = state.value.searchQuery.trim()
+
+        if (!cidadeSelecionada) {
+          state.value.candidatos = []
+          return
+        }
+
+        const tableName = 'votacao_candidato_munzona'
+        const votosField = 'qt_votos_nominais'
+        const selectFields = `nm_candidato, nm_urna_candidato, sg_partido, ds_cargo, ano_eleicao, sg_uf, ${votosField}, ds_sit_tot_turno, nr_turno, nm_municipio`
+
+        let query = client
+          .from(tableName)
+          .select(selectFields)
+          // Nome exato da cidade (garantido pelo v-select)
+          .eq('nm_municipio', cidadeSelecionada)
+
+        // Aplicar filtros obrigatórios
+        if (filters.uf) {
+          query = query.eq('sg_uf', filters.uf)
+        }
+
+        // Aplicar filtros opcionais
+        if (filters.ano) {
+          query = query.eq('ano_eleicao', filters.ano)
+        }
+        if (filters.cargo) {
+          query = query.eq('ds_cargo', filters.cargo)
+        }
+
+        query = query
+          .order(votosField, { ascending: false })
+          .limit(500)
+
+        const { data, error: err } = await query
+
+        if (err)
+          throw err
+
+        const rawData = (data || []) as unknown as Record<string, unknown>[]
+
+        // Agrupa votos por candidato (soma de diferentes zonas)
+        state.value.candidatos = aggregateCandidatos(rawData)
       }
     }
     catch (e: unknown) {

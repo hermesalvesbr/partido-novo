@@ -23,7 +23,6 @@ const {
   filters,
   isEleicaoMunicipal,
   filterCount,
-  canSearch,
   searchPlaceholder,
   searchIcon,
   search,
@@ -34,7 +33,6 @@ const {
 
 const {
   cidades,
-  loading: loadingCidades,
   loadCidades,
   clearCidades,
 } = useCidadesFilter()
@@ -68,9 +66,11 @@ watch(
   },
 )
 
-// Limpar resultados quando o usuário começar a digitar nova busca
+// Limpar resultados quando o usuário começar a DIGITAR nova busca
+// Apenas para busca por candidato (texto livre)
+// Para busca por cidade, a mudança vem do v-select (seleção intencional)
 watch(searchQuery, () => {
-  if (searched.value) {
+  if (searched.value && searchType.value === 'candidato') {
     clearResults()
   }
 })
@@ -98,25 +98,51 @@ watch(
   },
 )
 
-// Carregar cidades quando UF ou ano mudar
+// Carregar cidades quando UF ou tipo de busca mudar
 watch(
-  () => [filters.uf, filters.ano] as const,
-  async ([uf, ano]) => {
+  () => [filters.uf, searchType.value] as const,
+  async ([uf, type]) => {
     filters.cidade = null
 
-    if (!uf || !ano || (ano !== 2020 && ano !== 2024)) {
+    // Limpa a cidade selecionada quando UF muda (cidades são diferentes por estado)
+    if (type === 'cidade') {
+      searchQuery.value = ''
+      clearResults()
+    }
+
+    // Se não tem UF, limpa cidades
+    if (!uf) {
       clearCidades()
       return
     }
 
-    await loadCidades(uf, ano)
+    // Para busca por cidade: sempre carrega cidades
+    if (type === 'cidade') {
+      await loadCidades(uf)
+      return
+    }
+
+    // Para busca por candidato: só carrega em eleições municipais
+    if (isEleicaoMunicipal.value) {
+      await loadCidades(uf)
+    }
+    else {
+      clearCidades()
+    }
   },
+  { immediate: true },
 )
 
 // Handlers de UI
 function handleSearch(): void {
   showFilters.value = false
   search()
+}
+
+// Handler para o botão Aplicar do bottom sheet de filtros
+// Apenas fecha o bottom sheet - o usuário vai selecionar a cidade no campo principal
+function handleApplyFilters(): void {
+  showFilters.value = false
 }
 
 function handleClearFilters(): void {
@@ -161,7 +187,9 @@ function handleClearSearch(): void {
 
       <!-- Campo de busca dinâmico -->
       <div class="d-flex align-center ga-2">
+        <!-- Busca por Candidato: texto livre -->
         <v-text-field
+          v-if="searchType === 'candidato'"
           v-model="searchQuery"
           :placeholder="searchPlaceholder"
           :prepend-inner-icon="searchIcon"
@@ -172,7 +200,6 @@ function handleClearSearch(): void {
           single-line
           rounded
           class="flex-grow-1"
-          :disabled="searchType === 'cidade' && !filters.uf"
           @keyup.enter="handleSearch"
         >
           <template #append-inner>
@@ -192,18 +219,18 @@ function handleClearSearch(): void {
               </v-chip>
               <!-- Chip de UF -->
               <v-chip
-                v-if="filters.uf || searchType === 'cidade'"
+                v-if="filters.uf"
                 size="x-small"
-                :color="filters.uf ? 'primary' : 'warning'"
+                color="primary"
                 variant="tonal"
-                :closable="searchType === 'candidato' && filters.uf !== null"
+                closable
                 @click="showFilters = true"
                 @click:close="filters.uf = null"
               >
                 <v-icon start size="x-small">
                   mdi-map-marker
                 </v-icon>
-                {{ filters.uf || 'UF?' }}
+                {{ filters.uf }}
               </v-chip>
               <!-- Botão limpar busca -->
               <v-btn
@@ -216,6 +243,56 @@ function handleClearSearch(): void {
             </div>
           </template>
         </v-text-field>
+
+        <!-- Busca por Cidade: autocomplete -->
+        <v-autocomplete
+          v-else
+          v-model="searchQuery"
+          :items="cidades"
+          :placeholder="filters.uf ? 'Buscar nome da cidade...' : 'Selecione um estado primeiro'"
+          :prepend-inner-icon="searchIcon"
+          :disabled="!filters.uf"
+          :no-data-text="filters.uf ? 'Nenhuma cidade encontrada' : 'Selecione um estado (UF) primeiro'"
+          variant="solo-filled"
+          flat
+          density="comfortable"
+          hide-details
+          rounded
+          class="flex-grow-1"
+          auto-select-first
+          clearable
+          @update:model-value="handleSearch"
+        >
+          <template #append-inner>
+            <!-- Chips de filtros dentro da busca -->
+            <div class="d-flex align-center ga-1">
+              <!-- Chip de Ano -->
+              <v-chip
+                v-if="filters.ano"
+                size="x-small"
+                color="secondary"
+                variant="tonal"
+                closable
+                @click="showFilters = true"
+                @click:close="filters.ano = null"
+              >
+                {{ filters.ano }}
+              </v-chip>
+              <!-- Chip de UF (obrigatório para cidade) -->
+              <v-chip
+                size="x-small"
+                :color="filters.uf ? 'primary' : 'warning'"
+                variant="tonal"
+                @click="showFilters = true"
+              >
+                <v-icon start size="x-small">
+                  mdi-map-marker
+                </v-icon>
+                {{ filters.uf || 'UF?' }}
+              </v-chip>
+            </div>
+          </template>
+        </v-autocomplete>
 
         <v-btn
           icon
@@ -283,7 +360,6 @@ function handleClearSearch(): void {
             v-if="showCidadeFilter"
             v-model="filters.cidade"
             :items="cidades"
-            :loading="loadingCidades"
             label="Cidade"
             variant="outlined"
             density="comfortable"
@@ -304,8 +380,7 @@ function handleClearSearch(): void {
           <v-btn
             color="primary"
             variant="elevated"
-            :disabled="!canSearch"
-            @click="handleSearch"
+            @click="handleApplyFilters"
           >
             Aplicar
           </v-btn>

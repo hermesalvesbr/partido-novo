@@ -40,6 +40,9 @@ export interface CandidatoCardData {
   municipios_votados?: string[]
 }
 
+// Estado para controlar fallback quando imagem não carrega
+const imageError = ref(false)
+
 // Computed: Total de votos (suporta ambos os campos)
 const totalVotos = computed(() =>
   props.candidato.total_votos ?? props.candidato.qt_votos_nominais ?? 0,
@@ -51,8 +54,21 @@ const situacaoFormatada = computed(() => formatSituacao(props.candidato.ds_sit_t
 // Computed: URL do logo do partido
 const logoUrl = computed(() => getPartidoLogoUrl(props.candidato.sg_partido))
 
+// Computed: Devemos mostrar a imagem?
+const showImage = computed(() => logoUrl.value && !imageError.value)
+
 // Computed: Quantidade de municípios
 const municipiosCount = computed(() => props.candidato.municipios_votados?.length ?? 0)
+
+// Handler para erro ao carregar imagem
+function handleImageError() {
+  imageError.value = true
+}
+
+// Reset imageError quando mudar o partido
+watch(() => props.candidato.sg_partido, () => {
+  imageError.value = false
+})
 
 // Navegar para página do candidato usando nome completo (garante unicidade)
 function navigateToCandidato(): void {
@@ -90,19 +106,20 @@ function navigateToCandidato(): void {
         {{ rank }}º
       </div>
 
-      <!-- Logo do partido -->
+      <!-- Logo do partido ou chip com sigla -->
       <NuxtImg
-        v-if="logoUrl"
-        :src="logoUrl"
+        v-if="showImage"
+        :src="logoUrl!"
         :alt="candidato.sg_partido"
         preset="partido"
         class="flex-shrink-0"
         style="width: 48px; height: 48px; object-fit: contain;"
         loading="lazy"
+        @error="handleImageError"
       />
-      <v-avatar v-else size="48" color="primary" class="flex-shrink-0">
-        <span class="text-body-2 font-weight-bold">{{ candidato.sg_partido?.slice(0, 2) }}</span>
-      </v-avatar>
+      <v-chip v-else color="primary" variant="tonal" class="flex-shrink-0 font-weight-bold">
+        {{ candidato.sg_partido }}
+      </v-chip>
 
       <!-- Informações do candidato -->
       <div class="flex-grow-1 overflow-hidden">
@@ -155,19 +172,20 @@ function navigateToCandidato(): void {
         >
           {{ rank }}º
         </div>
-        <!-- Logo do partido -->
+        <!-- Logo do partido ou chip com sigla -->
         <NuxtImg
-          v-if="logoUrl"
-          :src="logoUrl"
+          v-if="showImage"
+          :src="logoUrl!"
           :alt="candidato.sg_partido"
           preset="partidoSmall"
           class="flex-shrink-0"
           style="width: 40px; height: 40px; object-fit: contain;"
           loading="lazy"
+          @error="handleImageError"
         />
-        <v-avatar v-else size="40" color="primary" class="flex-shrink-0">
-          <span class="text-caption font-weight-bold">{{ candidato.sg_partido?.slice(0, 2) }}</span>
-        </v-avatar>
+        <v-chip v-else size="small" color="primary" variant="tonal" class="flex-shrink-0 font-weight-bold">
+          {{ candidato.sg_partido }}
+        </v-chip>
       </div>
     </template>
 

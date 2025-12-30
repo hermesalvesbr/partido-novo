@@ -1,46 +1,53 @@
-import type { AnoEleicao, Estado } from '~/data/eleicoes'
+import type { Estado } from '~/data/eleicoes'
 
-import { PostgrestClient } from '@supabase/postgrest-js'
+// Tipo para o cache de cidades por UF (cache local para evitar fetch repetido)
+type CidadesCache = Partial<Record<Estado, string[]>>
 
 /**
- * Composable para carregar lista de cidades por UF e ano
- * Usado para filtros de eleições municipais
+ * Composable para carregar lista de cidades por UF
+ * Usa API /api/cidades/[uf] com cache no servidor (defineCachedEventHandler)
+ * Também mantém cache local com useState para evitar fetch repetido na mesma sessão
  */
 export function useCidadesFilter() {
-  // Runtime config para URL da API
-  const runtimeConfig = useRuntimeConfig()
-  const apiUrl = runtimeConfig.public.postgrestUrl as string
-  const client = new PostgrestClient(apiUrl)
+  // Loading indicator global do Nuxt
+  const loadingIndicator = useLoadingIndicator()
 
-  // Estado reativo
+  // Cache local por UF (evita fetch repetido na mesma sessão)
+  const cidadesCache = useState<CidadesCache>('cidades-cache', () => ({}))
+
+  // Estado reativo para cidades do UF atual
   const cidades = ref<string[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
 
   /**
-   * Carrega cidades de um estado para um ano específico
+   * Carrega cidades de um estado
+   * 1. Verifica cache local (instantâneo)
+   * 2. Se não tem, busca da API (cache no servidor)
    */
-  async function loadCidades(uf: Estado, ano: AnoEleicao): Promise<void> {
-    // Só carrega para eleições municipais
-    if (ano !== 2020 && ano !== 2024) {
-      cidades.value = []
+  async function loadCidades(uf: Estado): Promise<void> {
+    // Verifica cache local primeiro
+    const cached = cidadesCache.value[uf]
+    if (cached && cached.length > 0) {
+      cidades.value = cached
       return
     }
 
     loading.value = true
     error.value = null
+    loadingIndicator.start()
 
     try {
-      const { data } = await client
-        .from('votacao_candidato_munzona')
-        .select('nm_municipio')
-        .eq('sg_uf', uf)
-        .eq('ano_eleicao', ano)
-        .order('nm_municipio')
+      // Busca da API com cache no servidor
+      const data = await $fetch<string[]>(`/api/cidades/${uf}`)
 
-      // Remove duplicatas
-      const uniqueCidades = [...new Set((data || []).map((d: { nm_municipio: string }) => d.nm_municipio))]
-      cidades.value = uniqueCidades.filter(Boolean) as string[]
+      // Salva no cache local
+      cidadesCache.value = {
+        ...cidadesCache.value,
+        [uf]: data,
+      }
+
+      cidades.value = data
     }
     catch (e) {
       console.error('Erro ao carregar cidades:', e)
@@ -49,15 +56,23 @@ export function useCidadesFilter() {
     }
     finally {
       loading.value = false
+      loadingIndicator.finish()
     }
   }
 
   /**
-   * Limpa a lista de cidades
+   * Limpa a lista de cidades atual (não limpa o cache)
    */
   function clearCidades(): void {
     cidades.value = []
     error.value = null
+  }
+
+  /**
+   * Limpa todo o cache local (útil para refresh forçado)
+   */
+  function clearCache(): void {
+    cidadesCache.value = {}
   }
 
   return {
@@ -66,5 +81,6 @@ export function useCidadesFilter() {
     error: readonly(error),
     loadCidades,
     clearCidades,
+    clearCache,
   }
 }
