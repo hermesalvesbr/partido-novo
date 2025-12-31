@@ -5,7 +5,33 @@ export default defineNuxtConfig({
   modules: [
     'vuetify-nuxt-module',
     '@nuxt/image',
+    '@nuxtjs/sitemap',
   ],
+
+  // ===== SITEMAP CONFIGURATION =====
+  site: {
+    url: 'https://novo.softagon.app',
+    name: 'NOVO Pernambuco',
+  },
+
+  sitemap: {
+    // Fonte dinâmica de URLs (candidatos trackados)
+    sources: [
+      '/api/__sitemap__/urls',
+    ],
+    // Exclui páginas que não devem aparecer no sitemap
+    exclude: [
+      '/api/**',
+      '/favoritos', // Página pessoal do usuário
+    ],
+    // Cache do sitemap (1 hora)
+    cacheMaxAgeSeconds: 60 * 60,
+    // Configurações de URLs
+    defaults: {
+      changefreq: 'weekly',
+      priority: 0.8,
+    },
+  },
 
   devtools: { enabled: false },
 

@@ -109,7 +109,7 @@ export default defineCachedEventHandler(
   },
   {
     // Cache de 1 minuto em dev, 5 minutos em prod
-    maxAge: process.env.NODE_ENV === 'development' ? 60 : 60 * 5,
+    maxAge: import.meta.env.NODE_ENV === 'development' ? 60 : 60 * 5,
     staleMaxAge: 60 * 2,
     swr: true,
     base: 'cache',

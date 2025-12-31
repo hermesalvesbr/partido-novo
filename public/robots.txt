@@ -1,2 +1,17 @@
+# https://www.robotstxt.org/robotstxt.html
 User-Agent: *
-Disallow:
+Allow: /
+
+# Sitemap
+Sitemap: https://novo.softagon.app/sitemap.xml
+
+# Bloquear rotas internas
+Disallow: /api/
+Disallow: /_nuxt/
+
+# Permitir crawlers específicos
+User-Agent: Googlebot
+Allow: /
+
+User-Agent: Bingbot
+Allow: /
