@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import type { MunicipioIBGE } from '~/composables/useMesorregiao'
-import type { AnoEleicao, Cargo } from '~/data/eleicoes'
+import type { Cargo } from '~/data/eleicoes'
 import { ANOS_ELEICAO, TIPOS_ELEICAO } from '~/data/eleicoes'
+import { formatNumber } from '~/utils/formatters'
 
 // Pegar ID da mesorregião da rota
 const route = useRoute()
@@ -36,28 +37,36 @@ useSeoMeta({
 // UF da mesorregião
 const uf = computed(() => mesorregiao.value?.UF?.sigla ?? null)
 
-// ===== ESTADO LOCAL =====
-// Municípios selecionados para consulta (inicialmente todos)
-const municipiosSelecionados = ref<MunicipioIBGE[]>([])
+// ===== ESTADO PERSISTENTE (via useState) =====
+// Usa composable para persistir estado E RESULTADOS entre navegações
+const {
+  municipiosSelecionados,
+  anoSelecionado,
+  cargoSelecionado,
+  consultaIniciada,
+  candidatos,
+  stats,
+  loading: loadingCandidatos,
+  initMunicipios,
+  removerMunicipio,
+  restaurarTodos,
+  marcarConsultaIniciada,
+  buscarCandidatos,
+} = useRegiaoConsulta(mesorregiaoId)
 
-// Filtros
-const anoSelecionado = ref<AnoEleicao>(2024)
-const cargoSelecionado = ref<Cargo | null>(null)
-
-// Controle de consulta
-const consultaIniciada = ref(false)
+// Controle de loading local (não precisa persistir)
 const consultando = ref(false)
 
 // Inicializar municípios selecionados quando carregar
 watch(municipios, (novos) => {
-  if (novos && novos.length > 0 && municipiosSelecionados.value.length === 0) {
-    municipiosSelecionados.value = [...novos]
+  if (novos && novos.length > 0) {
+    initMunicipios(novos)
   }
 }, { immediate: true })
 
-// Nomes dos municípios selecionados
+// Nomes dos municípios selecionados (para busca)
 const nomesMunicipiosSelecionados = computed(() =>
-  municipiosSelecionados.value.map(m => m.nome.toUpperCase()),
+  municipiosSelecionados.value.map((m: MunicipioIBGE) => m.nome.toUpperCase()),
 )
 
 // Cargos disponíveis baseado no ano (usando dados centralizados)
@@ -70,23 +79,10 @@ watch(anoSelecionado, () => {
   cargoSelecionado.value = null
 })
 
-// Composable para buscar candidatos (não busca automaticamente)
-const { candidatos, stats, loading: loadingCandidatos, refresh } = useCandidatosRegiao(
-  nomesMunicipiosSelecionados,
-  uf,
-  anoSelecionado,
-  cargoSelecionado,
-)
-
-// Remover município da seleção
-function removerMunicipio(mun: MunicipioIBGE): void {
-  municipiosSelecionados.value = municipiosSelecionados.value.filter(m => m.id !== mun.id)
-}
-
-// Restaurar todos os municípios
-function restaurarTodos(): void {
+// Handler para restaurar todos os municípios
+function handleRestaurarTodos(): void {
   if (municipios.value) {
-    municipiosSelecionados.value = [...municipios.value]
+    restaurarTodos(municipios.value)
   }
 }
 
@@ -96,10 +92,10 @@ async function iniciarConsulta(): Promise<void> {
     return
 
   consultando.value = true
-  consultaIniciada.value = true
+  marcarConsultaIniciada()
 
   try {
-    await refresh()
+    await buscarCandidatos(uf.value, nomesMunicipiosSelecionados.value)
   }
   finally {
     consultando.value = false
@@ -161,7 +157,7 @@ const topCandidatos = computed(() => candidatos.value.slice(0, 20))
                   size="x-small"
                   variant="text"
                   color="primary"
-                  @click="restaurarTodos"
+                  @click="handleRestaurarTodos"
                 >
                   Restaurar todos
                 </v-btn>

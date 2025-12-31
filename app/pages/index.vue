@@ -33,6 +33,7 @@ const {
 
 const {
   cidades,
+  loading: loadingCidades,
   loadCidades,
   clearCidades,
 } = useCidadesFilter()
@@ -75,6 +76,13 @@ watch(searchQuery, () => {
   }
 })
 
+// Limpar busca e resultados quando mudar entre CANDIDATO ↔ CIDADE
+// Porque searchQuery tem significados diferentes em cada modo
+watch(searchType, () => {
+  searchQuery.value = ''
+  clearResults()
+})
+
 // Auto-preencher UF baseado na preferência (cookie > geolocalização)
 watchEffect(() => {
   if (ufEfetivo.value && filters.uf === null) {
@@ -98,16 +106,25 @@ watch(
   },
 )
 
-// Carregar cidades quando UF ou tipo de busca mudar
-watch(
-  () => [filters.uf, searchType.value] as const,
-  async ([uf, type]) => {
-    filters.cidade = null
+// Carregar cidades quando UF, tipo de busca ou ano mudar
+// Importante: observar isEleicaoMunicipal para reagir a mudanças de ano
+// Guarda UF anterior para detectar mudança real vs remontagem
+const previousUf = ref<string | null>(null)
 
-    // Limpa a cidade selecionada quando UF muda (cidades são diferentes por estado)
-    if (type === 'cidade') {
-      searchQuery.value = ''
-      clearResults()
+watch(
+  () => [filters.uf, searchType.value, isEleicaoMunicipal.value] as const,
+  async ([uf, type, isMunicipal]) => {
+    // Detecta se a UF realmente mudou (não é apenas remontagem da página)
+    const ufChanged = previousUf.value !== null && previousUf.value !== uf
+    previousUf.value = uf
+
+    // Só limpa cidade/resultados se UF realmente mudou
+    if (ufChanged) {
+      filters.cidade = null
+      if (type === 'cidade') {
+        searchQuery.value = ''
+        clearResults()
+      }
     }
 
     // Se não tem UF, limpa cidades
@@ -123,7 +140,7 @@ watch(
     }
 
     // Para busca por candidato: só carrega em eleições municipais
-    if (isEleicaoMunicipal.value) {
+    if (isMunicipal) {
       await loadCidades(uf)
     }
     else {
@@ -369,7 +386,8 @@ function handleClearSearch(): void {
             density="comfortable"
             clearable
             hide-details
-            no-data-text="Selecione um estado primeiro"
+            :loading="loadingCidades"
+            :no-data-text="loadingCidades ? 'Carregando cidades...' : 'Nenhuma cidade encontrada'"
           />
         </v-card-text>
 
