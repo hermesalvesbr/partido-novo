@@ -47,6 +47,11 @@ const {
   clearSuggestions,
 } = useCandidatoTypeahead()
 
+// Trending: candidatos mais acessados da UF
+const { useTrending } = useTrendingCandidatos()
+const ufRef = computed(() => filters.uf)
+const { trending, hasTrending, loading: trendingLoading } = useTrending(ufRef)
+
 // Loading indicator (barra laranja do topo)
 const { start: startLoading, finish: finishLoading } = useLoadingIndicator()
 
@@ -475,16 +480,70 @@ function handleClearSearch(): void {
       </div>
 
       <!-- Estado inicial (sem sugestões e sem busca) -->
-      <div v-else-if="!searched && !loading && !typeaheadLoading" class="text-center py-16">
-        <v-icon size="64" color="grey-lighten-1" class="mb-4">
-          {{ searchType === 'candidato' ? 'mdi-account-search-outline' : 'mdi-city-variant-outline' }}
-        </v-icon>
-        <p class="text-body-1 text-medium-emphasis">
-          {{ searchType === 'candidato' ? 'Busque por nome do candidato' : 'Busque por nome da cidade' }}
-        </p>
-        <p class="text-caption text-medium-emphasis">
-          Mínimo 3 caracteres{{ searchType === 'cidade' ? ' • UF obrigatória' : '' }}
-        </p>
+      <div v-else-if="!searched && !loading && !typeaheadLoading" class="py-4">
+        <!-- Trending: Candidatos mais buscados da UF -->
+        <template v-if="hasTrending && searchType === 'candidato'">
+          <div class="d-flex align-center mb-3">
+            <v-icon color="orange" size="20" class="mr-2">
+              mdi-fire
+            </v-icon>
+            <span class="text-body-2 font-weight-medium text-medium-emphasis">
+              Mais buscados em {{ filters.uf }}
+            </span>
+          </div>
+
+          <div class="d-flex flex-column ga-3 mb-6">
+            <CandidatoCard
+              v-for="(candidato, index) in trending"
+              :key="`trending-${candidato.slug}`"
+              :candidato="{
+                nm_candidato: candidato.nomeCompleto,
+                nm_urna_candidato: candidato.nome,
+                sg_partido: candidato.partido,
+                ds_cargo: candidato.cargo,
+                sg_uf: filters.uf || '',
+                ds_sit_tot_turno: candidato.situacao,
+                ano_eleicao: candidato.anoEleicao,
+                total_votos: candidato.totalVotos,
+              }"
+              :rank="index + 1"
+              variant="card"
+            />
+          </div>
+        </template>
+
+        <!-- Loading trending -->
+        <template v-else-if="trendingLoading && searchType === 'candidato' && filters.uf">
+          <div class="d-flex align-center mb-3">
+            <v-icon color="orange" size="20" class="mr-2">
+              mdi-fire
+            </v-icon>
+            <span class="text-body-2 font-weight-medium text-medium-emphasis">
+              Carregando mais buscados...
+            </span>
+          </div>
+          <div class="d-flex flex-column ga-3 mb-6">
+            <v-skeleton-loader
+              v-for="i in 3"
+              :key="i"
+              type="list-item-avatar-two-line"
+              class="rounded-lg"
+            />
+          </div>
+        </template>
+
+        <!-- Instrução de busca -->
+        <div class="text-center" :class="{ 'py-12': !hasTrending }">
+          <v-icon size="64" color="grey-lighten-1" class="mb-4">
+            {{ searchType === 'candidato' ? 'mdi-account-search-outline' : 'mdi-city-variant-outline' }}
+          </v-icon>
+          <p class="text-body-1 text-medium-emphasis">
+            {{ searchType === 'candidato' ? 'Busque por nome do candidato' : 'Busque por nome da cidade' }}
+          </p>
+          <p class="text-caption text-medium-emphasis">
+            Mínimo 3 caracteres{{ searchType === 'cidade' ? ' • UF obrigatória' : '' }}
+          </p>
+        </div>
       </div>
 
       <!-- Loading: Skeleton de cards -->

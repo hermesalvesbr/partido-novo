@@ -96,10 +96,11 @@ export default defineNuxtConfig({
         apiToken: process.env.NUXT_CLOUDFLARE_KV_TOKEN,
       },
     },
-    // Fallback para memória em desenvolvimento
+    // Fallback para filesystem em desenvolvimento (persiste entre reloads)
     devStorage: {
       cache: {
-        driver: 'memory',
+        driver: 'fs',
+        base: './.cache/nitro',
       },
     },
   },

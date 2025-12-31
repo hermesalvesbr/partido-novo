@@ -38,6 +38,9 @@ const slug = computed(() => route.params.slug as string)
 const { isFavorito, toggleFavorito } = useFavoritos()
 const favorito = computed(() => isFavorito(slug.value))
 
+// Sistema de trending (rastrear acessos)
+const { trackAccess } = useTrendingCandidatos()
+
 // Buscar dados do candidato via server API (lazy para não bloquear navegação)
 const { data: candidatoData, status, error } = await useLazyAsyncData<CandidatoData>(
   `candidato-${slug.value}`,
@@ -55,6 +58,25 @@ const { data: candidatoData, status, error } = await useLazyAsyncData<CandidatoD
     },
   },
 )
+
+// Rastrear acesso quando dados do candidato carregarem (fire-and-forget)
+watch(candidatoData, (data) => {
+  if (data) {
+    // Pega a eleição mais recente para exibir nos trending
+    const ultimaEleicao = data.eleicoes[0]
+    trackAccess({
+      slug: slug.value,
+      uf: data.sg_uf,
+      nome: data.nm_urna_candidato,
+      nomeCompleto: data.nm_candidato,
+      partido: ultimaEleicao?.sg_partido || '',
+      cargo: ultimaEleicao?.ds_cargo || '',
+      anoEleicao: ultimaEleicao?.ano_eleicao || 0,
+      situacao: ultimaEleicao?.ds_sit_tot_turno || '',
+      totalVotos: ultimaEleicao?.total_votos || 0,
+    })
+  }
+}, { immediate: true })
 
 // SEO Meta - título dinâmico baseado nos dados do candidato
 useSeoMeta({

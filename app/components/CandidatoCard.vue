@@ -9,6 +9,8 @@ const props = withDefaults(defineProps<{
   rank?: number
   /** Mostra ano da eleição */
   showAno?: boolean
+  /** Mostra votos (default true) */
+  showVotos?: boolean
   /** Mostra contagem de municípios (se disponível) */
   showMunicipios?: boolean
   /** Variante visual: 'card' para cards soltos, 'list' para dentro de v-list */
@@ -16,6 +18,7 @@ const props = withDefaults(defineProps<{
 }>(), {
   rank: undefined,
   showAno: true,
+  showVotos: true,
   showMunicipios: false,
   variant: 'card',
 })
@@ -127,9 +130,9 @@ function navigateToCandidato(): void {
           {{ candidato.nm_urna_candidato || candidato.nm_candidato }}
         </p>
         <p class="text-caption text-medium-emphasis mb-0">
-          {{ candidato.sg_partido }} · {{ candidato.ds_cargo }}
+          {{ candidato.sg_partido }}<template v-if="candidato.ds_cargo"> · {{ candidato.ds_cargo }}</template>
           <span v-if="candidato.nm_municipio"> · {{ candidato.nm_municipio }}</span>
-          - {{ candidato.sg_uf }}
+          <template v-if="candidato.sg_uf"> - {{ candidato.sg_uf }}</template>
         </p>
         <p v-if="showMunicipios && municipiosCount > 0" class="text-caption text-medium-emphasis mb-0">
           {{ municipiosCount }} município(s)
@@ -137,7 +140,7 @@ function navigateToCandidato(): void {
       </div>
 
       <!-- Votos e situação -->
-      <div class="text-right flex-shrink-0">
+      <div v-if="showVotos || situacaoFormatada" class="text-right flex-shrink-0">
         <v-chip
           v-if="situacaoFormatada"
           :color="getSituacaoColor(candidato.ds_sit_tot_turno)"
@@ -146,7 +149,7 @@ function navigateToCandidato(): void {
         >
           {{ situacaoFormatada }}
         </v-chip>
-        <p class="text-body-2 font-weight-bold mb-0">
+        <p v-if="showVotos" class="text-body-2 font-weight-bold mb-0">
           {{ formatNumber(totalVotos) }} votos
         </p>
         <p v-if="showAno && candidato.ano_eleicao" class="text-caption text-medium-emphasis mb-0">
