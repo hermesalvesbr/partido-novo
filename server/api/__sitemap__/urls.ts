@@ -43,9 +43,20 @@ export default defineSitemapEventHandler(async () => {
 
           // Só inclui candidatos com dados completos
           if (hasGoodData) {
+            // Página principal do candidato
             urls.push({
               loc: `/candidato/${slug}`,
               priority: isRecent ? 0.8 : 0.5,
+              changefreq: isRecent ? 'monthly' : 'yearly',
+              lastmod: meta.lastAccess
+                ? new Date(meta.lastAccess).toISOString()
+                : new Date(`${meta.anoEleicao}-12-31`).toISOString(),
+            })
+
+            // Página de análise eleitoral (prioridade ligeiramente menor)
+            urls.push({
+              loc: `/candidato/${slug}/analise`,
+              priority: isRecent ? 0.7 : 0.4,
               changefreq: isRecent ? 'monthly' : 'yearly',
               lastmod: meta.lastAccess
                 ? new Date(meta.lastAccess).toISOString()

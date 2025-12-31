@@ -103,7 +103,8 @@ useSeoMeta({
 // Navegação
 const router = useRouter()
 function goBack() {
-  router.back()
+  // Navega para home em vez de usar histórico (evita loop com página de análise)
+  router.push('/')
 }
 
 // Função para favoritar/desfavoritar
@@ -304,6 +305,36 @@ ${url}`
             {{ cargo }}
           </v-chip>
         </div>
+      </div>
+
+      <!-- Botão Análise Eleitoral -->
+      <div class="px-4 pb-3">
+        <v-card
+          variant="outlined"
+          rounded="lg"
+          color="primary"
+          :to="`/candidato/${slug}/analise`"
+          class="cursor-pointer"
+        >
+          <v-card-text class="d-flex align-center justify-space-between pa-3">
+            <div class="d-flex align-center">
+              <v-icon color="primary" class="mr-3">
+                mdi-chart-timeline-variant
+              </v-icon>
+              <div>
+                <p class="text-body-2 font-weight-medium mb-0">
+                  Análise Eleitoral Inteligente
+                </p>
+                <p class="text-caption text-medium-emphasis mb-0">
+                  Concorrentes, bloco de corte e oportunidades
+                </p>
+              </div>
+            </div>
+            <v-icon color="primary">
+              mdi-chevron-right
+            </v-icon>
+          </v-card-text>
+        </v-card>
       </div>
 
       <!-- Distribuição Geográfica (lazy - carrega independente) -->
