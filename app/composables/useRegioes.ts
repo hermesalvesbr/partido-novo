@@ -75,9 +75,12 @@ const UF_CODES: Record<Estado, number> = {
 export function useRegioes(uf: Ref<Estado | null>) {
   const ufCode = computed(() => (uf.value ? UF_CODES[uf.value] : null))
 
-  // useAsyncData com key dinâmica baseada no UF para cache eficiente
+  // Key dinâmica baseada no UF para cache eficiente
+  const cacheKey = computed(() => `ibge-mesorregioes-completo-${uf.value || 'none'}`)
+
+  // useAsyncData com key dinâmica (computed ref)
   const { data: mesorregioes, status, error, refresh } = useAsyncData<Mesorregiao[]>(
-    () => `ibge-mesorregioes-completo-${uf.value}`,
+    cacheKey,
     async () => {
       if (!ufCode.value)
         return []

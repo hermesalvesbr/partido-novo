@@ -14,7 +14,7 @@ useSeoMeta({
 
 // Composables para separação de responsabilidades
 const {
-  loading,
+  loading: searchLoading,
   searched,
   error,
   candidatos,
@@ -37,6 +37,43 @@ const {
   loadCidades,
   clearCidades,
 } = useCidadesFilter()
+
+// Typeahead para busca instantânea de candidatos
+const {
+  inputValue: typeaheadInput,
+  suggestions,
+  isLoading: typeaheadLoading,
+  setUf: setTypeaheadUf,
+  clearSuggestions,
+} = useCandidatoTypeahead()
+
+// Loading indicator (barra laranja do topo)
+const { start: startLoading, finish: finishLoading } = useLoadingIndicator()
+
+// Computed: Loading unificado (typeahead ou busca completa)
+const loading = computed(() => searchLoading.value || typeaheadLoading.value)
+
+// Sincronizar loading com barra do topo
+watch(loading, (isLoading) => {
+  if (isLoading) {
+    startLoading()
+  }
+  else {
+    finishLoading()
+  }
+})
+
+// Computed: Mostrar sugestões do typeahead
+// Mostra quando: modo candidato + tem sugestões + (não buscou ainda OU está digitando algo novo)
+const showSuggestions = computed(() => {
+  if (searchType.value !== 'candidato') return false
+  if (suggestions.value.length === 0) return false
+  // Se não fez busca completa ainda, mostra sugestões
+  if (!searched.value) return true
+  // Se está digitando algo diferente da busca anterior, mostra sugestões
+  // (o usuário quer uma nova busca)
+  return typeaheadInput.value.trim().length >= 3 && candidatos.value.length === 0
+})
 
 // Preferência de UF: prioridade cookie > geolocalização
 const {
@@ -67,21 +104,26 @@ watch(
   },
 )
 
-// Limpar resultados quando o usuário começar a DIGITAR nova busca
-// Apenas para busca por candidato (texto livre)
-// Para busca por cidade, a mudança vem do v-select (seleção intencional)
-watch(searchQuery, () => {
-  if (searched.value && searchType.value === 'candidato') {
-    clearResults()
-  }
-})
+// REMOVIDO: O watch que limpava resultados ao digitar foi removido
+// Isso quebrava a persistência da busca ao navegar e voltar
+// Agora os resultados só são limpos ao fazer nova busca com Enter
 
 // Limpar busca e resultados quando mudar entre CANDIDATO ↔ CIDADE
 // Porque searchQuery tem significados diferentes em cada modo
 watch(searchType, () => {
   searchQuery.value = ''
+  typeaheadInput.value = ''
   clearResults()
+  clearSuggestions()
 })
+
+// Sincronizar typeahead input com searchQuery (modo candidato)
+// Permite que o typeahead reaja à digitação
+watch(searchQuery, (newValue) => {
+  if (searchType.value === 'candidato') {
+    typeaheadInput.value = newValue
+  }
+}, { immediate: true }) // immediate: sincroniza na montagem se já tiver valor
 
 // Auto-preencher UF baseado na preferência (cookie > geolocalização)
 watchEffect(() => {
@@ -103,7 +145,10 @@ watch(
     if (newUf === null && oldUf !== null && hasUserPreference.value) {
       clearUfPreference()
     }
+    // Sincroniza UF com typeahead
+    setTypeaheadUf(newUf)
   },
+  { immediate: true }, // Sincroniza na montagem também
 )
 
 // Carregar cidades quando UF, tipo de busca ou ano mudar
@@ -153,6 +198,7 @@ watch(
 // Handlers de UI
 function handleSearch(): void {
   showFilters.value = false
+  clearSuggestions() // Limpa sugestões ao fazer busca completa
   search()
 }
 
@@ -172,7 +218,9 @@ function handleClearFilters(): void {
 
 function handleClearSearch(): void {
   searchQuery.value = ''
+  typeaheadInput.value = ''
   clearResults()
+  clearSuggestions()
 }
 </script>
 
@@ -412,8 +460,22 @@ function handleClearSearch(): void {
 
     <!-- Conteúdo principal -->
     <div class="flex-grow-1 w-100 bg-grey-lighten-4 px-3 py-4 overflow-y-auto">
-      <!-- Estado inicial -->
-      <div v-if="!searched && !loading" class="text-center py-16">
+      <!-- Sugestões do Typeahead (modo candidato, enquanto digita) -->
+      <div v-if="showSuggestions" class="d-flex flex-column ga-3 w-100">
+        <p class="text-caption text-medium-emphasis mb-0">
+          {{ suggestions.length }} sugestão(ões) • Enter para busca completa
+        </p>
+
+        <CandidatoCard
+          v-for="candidato in suggestions"
+          :key="`sug-${candidato.nm_urna_candidato}-${candidato.ano_eleicao}-${candidato.ds_cargo}`"
+          :candidato="candidato"
+          variant="card"
+        />
+      </div>
+
+      <!-- Estado inicial (sem sugestões e sem busca) -->
+      <div v-else-if="!searched && !loading && !typeaheadLoading" class="text-center py-16">
         <v-icon size="64" color="grey-lighten-1" class="mb-4">
           {{ searchType === 'candidato' ? 'mdi-account-search-outline' : 'mdi-city-variant-outline' }}
         </v-icon>
@@ -425,15 +487,17 @@ function handleClearSearch(): void {
         </p>
       </div>
 
-      <!-- Loading -->
-      <div v-else-if="loading" class="text-center py-16">
-        <v-progress-circular indeterminate color="primary" size="48" />
-        <p class="mt-4 text-medium-emphasis">
-          Buscando...
-        </p>
+      <!-- Loading: Skeleton de cards -->
+      <div v-else-if="loading" class="d-flex flex-column ga-3 w-100">
+        <v-skeleton-loader
+          v-for="i in 4"
+          :key="i"
+          type="list-item-avatar-two-line"
+          class="rounded-lg"
+        />
       </div>
 
-      <!-- Sem resultados -->
+      <!-- Sem resultados (apenas após busca completa) -->
       <div v-else-if="searched && candidatos.length === 0" class="text-center py-16">
         <v-icon size="64" color="grey-lighten-1" class="mb-4">
           mdi-magnify-close

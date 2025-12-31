@@ -144,7 +144,7 @@ const nomeEstado = computed(() => {
             </h2>
           </div>
           <v-chip color="primary" variant="tonal" size="small">
-            {{ mesorregioes.length }} regiões
+            {{ mesorregioes?.length ?? 0 }} regiões
           </v-chip>
         </div>
 
@@ -182,7 +182,7 @@ const nomeEstado = computed(() => {
                 </template>
               </v-list-item>
 
-              <v-divider v-if="index < mesorregioes.length - 1" />
+              <v-divider v-if="index < (mesorregioes?.length ?? 0) - 1" />
             </template>
           </v-list>
         </v-card>
