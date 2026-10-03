@@ -23,10 +23,9 @@
       --branco: #ffffff;
 
       /* Ajustes finos da foto do Renan */
-      --foto: url("renan-amarela.jpg");
-      --foto-posicao: 50% 20%;
-      --foto-topo: 820px;
-      --paisagem: url("paisagem.jpg");
+      --foto-topo: 900px;
+      --foto-largura: 800px;
+      --paisagem: url("paisagem.svg");
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -59,7 +58,7 @@
       position: absolute;
       inset: -60px;
       background: var(--paisagem) center / cover no-repeat;
-      filter: blur(18px) saturate(1.15);
+      filter: blur(14px) saturate(1.1);
     }
 
     /* Azul no topo para dar leitura à frase */
@@ -73,22 +72,16 @@
         rgba(30, 136, 229, 0) 62%);
     }
 
-    /* Foto real, sem edição por IA: só recorte e esmaecimento das bordas */
+    /* Foto real do Renan (IMG_1645): polo recolorida por ajuste de cor
+       e recorte do fundo, sem geração ou alteração por IA. */
     .renan {
       position: absolute;
-      left: 0;
       right: 0;
       top: var(--foto-topo);
-      bottom: 0;
-      background: var(--foto) var(--foto-posicao) / cover no-repeat;
-      -webkit-mask-image:
-        linear-gradient(180deg, transparent 0%, #000 14%),
-        linear-gradient(90deg, transparent 0%, #000 12%, #000 88%, transparent 100%);
-      -webkit-mask-composite: source-in;
-      mask-image:
-        linear-gradient(180deg, transparent 0%, #000 14%),
-        linear-gradient(90deg, transparent 0%, #000 12%, #000 88%, transparent 100%);
-      mask-composite: intersect;
+      width: var(--foto-largura);
+      height: auto;
+      filter: drop-shadow(0 18px 40px rgba(0, 0, 0, 0.35));
+      z-index: 1;
     }
 
     /* Frase */
@@ -150,7 +143,7 @@
   <div class="arte" id="arte">
     <div class="fundo"></div>
     <div class="fundo-azul"></div>
-    <div class="renan" role="img" aria-label="Renan Bihum de camiseta amarela"></div>
+    <img class="renan" src="renan-amarela.webp" alt="Renan Bihum de camiseta amarela">
 
     <div class="frase">
       <span class="eu-voto faixa-marinho">Eu voto em</span>
