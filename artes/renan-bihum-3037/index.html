@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Eu voto em Renan Bihum 3037</title>
+  <style>
+    @font-face {
+      font-family: "Montserrat";
+      font-weight: 800;
+      src: url("fonts/montserrat-latin-800-normal.woff2") format("woff2");
+    }
+    @font-face {
+      font-family: "Montserrat";
+      font-weight: 900;
+      src: url("fonts/montserrat-latin-900-normal.woff2") format("woff2");
+    }
+
+    :root {
+      --azul: #1e88e5;
+      --marinho: #1b2a7a;
+      --laranja: #f2622e;
+      --branco: #ffffff;
+
+      /* Ajustes finos da foto do Renan */
+      --foto: url("renan-amarela.jpg");
+      --foto-posicao: 50% 20%;
+      --foto-topo: 820px;
+      --paisagem: url("paisagem.jpg");
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      background: #111;
+    }
+
+    body {
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+    }
+
+    /* Arte em tamanho real: 1080 x 1920 (stories / reels) */
+    .arte {
+      position: relative;
+      width: 1080px;
+      height: 1920px;
+      overflow: hidden;
+      font-family: "Montserrat", "Arial Black", sans-serif;
+      background: var(--azul);
+      transform-origin: center;
+      flex: none;
+    }
+
+    /* Paisagem desfocada ao fundo */
+    .fundo {
+      position: absolute;
+      inset: -60px;
+      background: var(--paisagem) center / cover no-repeat;
+      filter: blur(18px) saturate(1.15);
+    }
+
+    /* Azul no topo para dar leitura à frase */
+    .fundo-azul {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg,
+        var(--azul) 0%,
+        var(--azul) 34%,
+        rgba(30, 136, 229, 0.55) 46%,
+        rgba(30, 136, 229, 0) 62%);
+    }
+
+    /* Foto real, sem edição por IA: só recorte e esmaecimento das bordas */
+    .renan {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: var(--foto-topo);
+      bottom: 0;
+      background: var(--foto) var(--foto-posicao) / cover no-repeat;
+      -webkit-mask-image:
+        linear-gradient(180deg, transparent 0%, #000 14%),
+        linear-gradient(90deg, transparent 0%, #000 12%, #000 88%, transparent 100%);
+      -webkit-mask-composite: source-in;
+      mask-image:
+        linear-gradient(180deg, transparent 0%, #000 14%),
+        linear-gradient(90deg, transparent 0%, #000 12%, #000 88%, transparent 100%);
+      mask-composite: intersect;
+    }
+
+    /* Frase */
+    .frase {
+      position: absolute;
+      top: 90px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 940px;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      color: var(--branco);
+      text-transform: uppercase;
+      text-align: center;
+      line-height: 1;
+      letter-spacing: -0.035em;
+      z-index: 2;
+    }
+
+    .frase span {
+      display: block;
+      white-space: nowrap;
+    }
+
+    .faixa-marinho { background: var(--marinho); }
+    .faixa-laranja { background: var(--laranja); }
+
+    .eu-voto {
+      font-weight: 900;
+      font-size: 132px;
+      padding: 22px 0 14px;
+    }
+
+    .nome {
+      font-weight: 900;
+      font-size: 136px;
+      padding: 14px 0 10px;
+    }
+
+    .cargo {
+      font-weight: 800;
+      font-size: 84px;
+      padding: 12px 0 10px;
+      letter-spacing: -0.02em;
+    }
+
+    .numero {
+      font-weight: 900;
+      font-size: 380px;
+      line-height: 0.86;
+      padding: 30px 0 18px;
+      letter-spacing: -0.04em;
+      margin-top: 18px;
+    }
+  </style>
+</head>
+<body>
+  <div class="arte" id="arte">
+    <div class="fundo"></div>
+    <div class="fundo-azul"></div>
+    <div class="renan" role="img" aria-label="Renan Bihum de camiseta amarela"></div>
+
+    <div class="frase">
+      <span class="eu-voto faixa-marinho">Eu voto em</span>
+      <span class="nome faixa-laranja">Renan Bihum</span>
+      <span class="cargo faixa-marinho">Deputado Federal</span>
+      <span class="numero faixa-laranja">3037</span>
+    </div>
+  </div>
+
+  <script>
+    // Ajusta a arte à janela sem alterar o tamanho real (1080x1920).
+    // Use ?export para ver em escala 1:1 (para gerar o PNG).
+    const arte = document.getElementById("arte");
+    function caber() {
+      if (location.search.includes("export")) {
+        document.body.style.overflow = "visible";
+        return;
+      }
+      const s = Math.min(innerWidth / 1080, innerHeight / 1920);
+      arte.style.transform = `scale(${s})`;
+    }
+    addEventListener("resize", caber);
+    caber();
+
+    // Cada linha da frase ocupa a largura da faixa, como na arte original.
+    document.fonts.ready.then(() => {
+      document.querySelectorAll(".frase span").forEach((el) => {
+        const alvo = el.clientWidth - 40;
+        let tam = parseFloat(getComputedStyle(el).fontSize);
+        el.style.display = "inline-block";
+        const larg = el.scrollWidth;
+        el.style.display = "";
+        el.style.fontSize = Math.min(tam * alvo / larg, tam * 1.6) + "px";
+      });
+      document.body.dataset.pronto = "1";
+    });
+  </script>
+</body>
+</html>
