@@ -29,6 +29,7 @@ const ELECTION_TYPES = {
   2020: { type: 'Municipais', cargos: ['PREFEITO', 'VEREADOR'] },
   2022: { type: 'Gerais', cargos: ['PRESIDENTE', 'GOVERNADOR', 'SENADOR', 'DEPUTADO FEDERAL', 'DEPUTADO ESTADUAL'] },
   2024: { type: 'Municipais', cargos: ['PREFEITO', 'VEREADOR'] },
+  2026: { type: 'Gerais', cargos: ['PRESIDENTE', 'GOVERNADOR', 'SENADOR', 'DEPUTADO FEDERAL', 'DEPUTADO ESTADUAL'] },
 }
 
 export default defineEventHandler(async (event) => {

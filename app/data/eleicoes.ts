@@ -89,7 +89,7 @@ export const CARGOS = [
 ] as const
 
 // Anos de eleições disponíveis
-export const ANOS_ELEICAO = [2024, 2022, 2020, 2018] as const
+export const ANOS_ELEICAO = [2026, 2024, 2022, 2020, 2018] as const
 
 // Tipos de eleição por ano
 export const TIPOS_ELEICAO = {
@@ -97,6 +97,7 @@ export const TIPOS_ELEICAO = {
   2020: { tipo: 'Municipais', cargos: ['Prefeito', 'Vereador'] },
   2022: { tipo: 'Gerais', cargos: ['Presidente', 'Governador', 'Senador', 'Deputado Federal', 'Deputado Estadual', 'Deputado Distrital'] },
   2024: { tipo: 'Municipais', cargos: ['Prefeito', 'Vereador'] },
+  2026: { tipo: 'Gerais', cargos: ['Presidente', 'Governador', 'Senador', 'Deputado Federal', 'Deputado Estadual', 'Deputado Distrital'] },
 } as const
 
 // Turnos

@@ -106,6 +106,7 @@ export default defineEventHandler(async () => {
         2020: { type: 'Municipais', description: 'Prefeito, Vereador' },
         2022: { type: 'Gerais', description: 'Presidente, Governador, Senador, Deputados' },
         2024: { type: 'Municipais', description: 'Prefeito, Vereador' },
+        2026: { type: 'Gerais', description: 'Presidente, Governador, Senador, Deputados' },
       }
     }
     
