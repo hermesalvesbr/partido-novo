@@ -2,16 +2,8 @@
 User-Agent: *
 Allow: /
 
-# Sitemap
-Sitemap: https://novo.softagon.app/sitemap.xml
-
-# Bloquear rotas internas
+# Rotas internas. /_nuxt/ NÃO pode ser bloqueado: é o JavaScript que o
+# buscador precisa para renderizar as páginas.
 Disallow: /api/
-Disallow: /_nuxt/
 
-# Permitir crawlers específicos
-User-Agent: Googlebot
-Allow: /
-
-User-Agent: Bingbot
-Allow: /
+Sitemap: https://novo.softagon.app/sitemap.xml

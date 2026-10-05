@@ -41,8 +41,9 @@ const favorito = computed(() => isFavorito(slug.value))
 // Sistema de trending (rastrear acessos)
 const { trackAccess } = useTrendingCandidatos()
 
-// Buscar dados do candidato via server API (lazy para não bloquear navegação)
-const { data: candidatoData, status, error } = await useLazyAsyncData<CandidatoData>(
+// Buscar dados do candidato via server API. Lazy só no cliente (não bloqueia a
+// navegação); no servidor espera, para responder 404 de verdade a slug inexistente.
+const { data: candidatoData, status, error } = await useAsyncData<CandidatoData>(
   `candidato-${slug.value}`,
   () => $fetch('/api/candidato', {
     query: { slug: slug.value },
@@ -56,8 +57,14 @@ const { data: candidatoData, status, error } = await useLazyAsyncData<CandidatoD
       // Verificar cache do payload (SSR) ou static
       return nuxtApp.payload.data[key] ?? nuxtApp.static.data[key]
     },
+    lazy: import.meta.client,
   },
 )
+
+// Slug sem candidato: 404 no SSR, para o buscador não indexar uma página vazia
+if (import.meta.server && error.value?.statusCode === 404) {
+  throw createError({ statusCode: 404, statusMessage: 'Candidato não encontrado', fatal: true })
+}
 
 // Rastrear acesso quando dados do candidato carregarem (fire-and-forget)
 watch(candidatoData, (data) => {
@@ -98,6 +105,41 @@ useSeoMeta({
   twitterDescription: () => candidatoData.value
     ? `Histórico eleitoral de ${candidatoData.value.nm_urna_candidato}. ${candidatoData.value.stats.total_votos.toLocaleString('pt-BR')} votos.`
     : 'Consulte o histórico eleitoral do candidato.',
+  ogType: 'profile',
+})
+
+// Dados estruturados: a pessoa e o caminho até ela
+useHead(() => {
+  const c = candidatoData.value
+  if (!c)
+    return {}
+  const url = `https://novo.softagon.app/candidato/${slug.value}`
+  return {
+    script: [{
+      type: 'application/ld+json',
+      innerHTML: JSON.stringify({
+        '@context': 'https://schema.org',
+        '@graph': [
+          {
+            '@type': 'Person',
+            '@id': `${url}#pessoa`,
+            'name': c.nm_candidato,
+            'alternateName': c.nm_urna_candidato,
+            'url': url,
+            'affiliation': c.eleicoes[0]?.sg_partido ? { '@type': 'PoliticalParty', 'name': c.eleicoes[0].sg_partido } : undefined,
+            'homeLocation': { '@type': 'State', 'name': c.sg_uf, 'containedInPlace': { '@type': 'Country', 'name': 'Brasil' } },
+          },
+          {
+            '@type': 'BreadcrumbList',
+            'itemListElement': [
+              { '@type': 'ListItem', 'position': 1, 'name': 'Início', 'item': 'https://novo.softagon.app/' },
+              { '@type': 'ListItem', 'position': 2, 'name': c.nm_urna_candidato },
+            ],
+          },
+        ],
+      }),
+    }],
+  }
 })
 
 // Navegação

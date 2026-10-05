@@ -105,7 +105,7 @@ export default defineNuxtConfig({
       link: [
         { rel: 'icon', type: 'image/x-icon', href: '/favicon.ico' },
         { rel: 'apple-touch-icon', href: '/android/android-launchericon-192-192.png' },
-        { rel: 'canonical', href: 'https://novo.softagon.app' },
+        // canonical: por página, em app/app.vue (aqui ele apontava TODAS as páginas para a home)
       ],
     },
   },

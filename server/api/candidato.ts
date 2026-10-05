@@ -55,9 +55,9 @@ interface RankingResult {
 }
 
 /**
- * Converte texto para slug URL-friendly (mantido para uso futuro)
+ * Converte texto para slug URL-friendly (mesma regra de app/utils/slug.ts)
  */
-function _slugify(text: string): string {
+function slugify(text: string): string {
   return text
     .toString()
     .normalize('NFD')
@@ -133,12 +133,19 @@ export default defineCachedEventHandler(async (event) => {
     records = await response.json() as VotosCandidatoRecord[]
   }
 
+  // As estratégias abaixo são buscas aproximadas e podem trazer outra pessoa
+  // ("pe-jose-renan-bihum-de-alencar" chegou a abrir o CAPITAO ALENCAR pelo
+  // primeiro e último nome). Só vale o registro cujo slug do nome completo ou
+  // do nome de urna é exatamente o da URL; se nenhum bater, é 404.
+  const confere = (r: VotosCandidatoRecord) =>
+    slugify(r.nm_candidato ?? '') === nomeSlug || slugify(r.nm_urna_candidato ?? '') === nomeSlug
+
   // Estratégia 2: Fallback para ILIKE se RPC falhar ou não existir
   if (records.length === 0) {
     urlStr = `${postgrestUrl}/mv_votos_candidato?sg_uf=eq.${uf}&nm_candidato=ilike.*${encodeURIComponent(nomeCompleto)}*&order=ano_eleicao.desc`
     response = await fetch(urlStr)
     if (response.ok) {
-      records = await response.json() as VotosCandidatoRecord[]
+      records = (await response.json() as VotosCandidatoRecord[]).filter(confere)
     }
   }
 
@@ -151,7 +158,7 @@ export default defineCachedEventHandler(async (event) => {
 
       response = await fetch(urlStr)
       if (response.ok) {
-        records = await response.json() as VotosCandidatoRecord[]
+        records = (await response.json() as VotosCandidatoRecord[]).filter(confere)
       }
     }
   }
@@ -166,7 +173,7 @@ export default defineCachedEventHandler(async (event) => {
 
       response = await fetch(urlStr)
       if (response.ok) {
-        records = await response.json() as VotosCandidatoRecord[]
+        records = (await response.json() as VotosCandidatoRecord[]).filter(confere)
       }
     }
   }
@@ -207,8 +214,8 @@ export default defineCachedEventHandler(async (event) => {
   // Chave única por slug
   getKey: (event) => {
     const query = getQuery(event)
-    // v13: cache 1 ano no Cloudflare KV
-    return `v13:${query.slug || 'unknown'}`
+    // v14: slug estrito (a v13 guardou candidato errado para slugs sem match exato)
+    return `v14:${query.slug || 'unknown'}`
   },
   // Stale-while-revalidate para resposta instantânea
   swr: true,

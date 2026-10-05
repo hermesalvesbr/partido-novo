@@ -46,12 +46,14 @@ export default defineEventHandler(async (event) => {
       }
     }
     else if (slug) {
-      // Invalidar apenas o slug específico
-      const key = `candidato:v12:${slug}`
-      const exists = await storage.hasItem(key)
-      if (exists) {
-        await storage.removeItem(key)
-        deletedKeys.push(key)
+      // Invalidar apenas o slug específico, em qualquer versão da chave
+      // (a chave fixa em v12 deixou de achar nada quando o cache passou para v13)
+      const keys = await storage.getKeys('candidato')
+      for (const key of keys) {
+        if (key.endsWith(`:${slug}.json`) || key.endsWith(`:${slug}`)) {
+          await storage.removeItem(key)
+          deletedKeys.push(key)
+        }
       }
     }
     else {

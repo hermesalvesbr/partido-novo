@@ -1,15 +1,54 @@
 <script setup lang="ts">
-import type { AnoEleicao, Cargo } from '~/data/eleicoes'
-import { ANOS_ELEICAO, ESTADOS, TIPOS_ELEICAO } from '~/data/eleicoes'
+import type { AnoEleicao, Cargo, Estado } from '~/data/eleicoes'
+import { ANOS_ELEICAO, CARGOS, ESTADOS, TIPOS_ELEICAO } from '~/data/eleicoes'
+import { slugify } from '~/utils/slug'
 
-// SEO Meta Tags
+const route = useRoute()
+const router = useRouter()
+
+/**
+ * Filtros na URL: /?uf=PE&ano=2026&cargo=deputado-federal&q=renan
+ * (tipo=cidade na busca por cidade). Dá link compartilhável e o "voltar" do
+ * navegador. O canonical continua "/" (app.vue): as combinações de filtro não
+ * viram páginas duplicadas no buscador, e quem ranqueia é a página do candidato.
+ */
+function textoDaQuery(v: unknown): string {
+  return typeof v === 'string' ? v.trim() : ''
+}
+const filtrosDaUrl = computed(() => {
+  const q = route.query
+  const uf = textoDaQuery(q.uf).toUpperCase()
+  const ano = Number(textoDaQuery(q.ano))
+  return {
+    tipo: textoDaQuery(q.tipo) === 'cidade' ? 'cidade' as const : 'candidato' as const,
+    uf: (ESTADOS as readonly string[]).includes(uf) ? uf as Estado : null,
+    ano: (ANOS_ELEICAO as readonly number[]).includes(ano) ? ano as AnoEleicao : null,
+    cargo: CARGOS.find(c => slugify(c) === textoDaQuery(q.cargo).toLowerCase()) ?? null,
+    cidade: textoDaQuery(q.cidade) || null,
+    busca: textoDaQuery(q.q),
+  }
+})
+
+// SEO Meta Tags: título e descrição seguem os filtros aplicados (link compartilhado)
+const tituloBusca = computed(() => {
+  const f = filtrosDaUrl.value
+  if (f.busca)
+    return `"${f.busca}" · Buscar Candidatos`
+  if (!f.uf && !f.ano && !f.cargo && !f.cidade)
+    return 'Buscar Candidatos'
+  const onde = f.cidade ? ` em ${f.cidade}${f.uf ? `/${f.uf}` : ''}` : (f.uf ? ` em ${f.uf}` : '')
+  return `Candidatos${f.cargo ? ` a ${f.cargo}` : ''}${onde}${f.ano ? ` · Eleições ${f.ano}` : ''}`
+})
+const descricaoBusca = computed(() => tituloBusca.value === 'Buscar Candidatos'
+  ? 'Pesquise candidatos por nome ou cidade. Consulte dados eleitorais do TSE, histórico de votos e resultados de eleições em todo o Brasil.'
+  : `${tituloBusca.value}: votos, partido e situação de cada candidato, com dados oficiais do TSE.`)
 useSeoMeta({
-  title: 'Buscar Candidatos',
-  description: 'Pesquise candidatos por nome ou cidade. Consulte dados eleitorais do TSE, histórico de votos e resultados de eleições em todo o Brasil.',
-  ogTitle: 'Buscar Candidatos | NOVO Pernambuco',
-  ogDescription: 'Pesquise candidatos por nome ou cidade. Consulte dados eleitorais do TSE e histórico de eleições.',
-  twitterTitle: 'Buscar Candidatos | NOVO Pernambuco',
-  twitterDescription: 'Pesquise candidatos por nome ou cidade. Consulte dados eleitorais do TSE e histórico de eleições.',
+  title: tituloBusca,
+  description: descricaoBusca,
+  ogTitle: () => `${tituloBusca.value} | NOVO Pernambuco`,
+  ogDescription: descricaoBusca,
+  twitterTitle: () => `${tituloBusca.value} | NOVO Pernambuco`,
+  twitterDescription: descricaoBusca,
 })
 
 // Composables para separação de responsabilidades
@@ -30,6 +69,60 @@ const {
   clearFilters,
   setUf,
 } = useCandidatoSearch()
+
+// Aplica os filtros da URL ANTES dos watchers abaixo, para que trocar o ano não
+// apague o cargo que veio no link.
+const veioComFiltros = (() => {
+  const f = filtrosDaUrl.value
+  let aplicou = false
+  if (f.tipo === 'cidade') {
+    searchType.value = 'cidade'
+    aplicou = true
+  }
+  if (f.uf) {
+    setUf(f.uf)
+    aplicou = true
+  }
+  if (f.ano) {
+    filters.ano = f.ano
+    aplicou = true
+  }
+  if (f.cargo) {
+    filters.cargo = f.cargo
+    aplicou = true
+  }
+  if (f.cidade) {
+    filters.cidade = f.cidade
+    aplicou = true
+  }
+  if (f.busca) {
+    searchQuery.value = f.busca
+    aplicou = true
+  }
+  return aplicou
+})()
+
+function gravarFiltrosNaUrl(): void {
+  const query: Record<string, string> = {}
+  if (searchType.value === 'cidade')
+    query.tipo = 'cidade'
+  if (filters.uf)
+    query.uf = filters.uf
+  if (filters.ano)
+    query.ano = String(filters.ano)
+  if (filters.cargo)
+    query.cargo = slugify(filters.cargo)
+  if (filters.cidade)
+    query.cidade = filters.cidade
+  if (searchQuery.value.trim())
+    query.q = searchQuery.value.trim()
+  router.replace({ query })
+}
+
+onMounted(() => {
+  if (veioComFiltros)
+    search()
+})
 
 const {
   cidades,
@@ -204,6 +297,7 @@ watch(
 function handleSearch(): void {
   showFilters.value = false
   clearSuggestions() // Limpa sugestões ao fazer busca completa
+  gravarFiltrosNaUrl()
   search()
 }
 
@@ -211,6 +305,7 @@ function handleSearch(): void {
 // Fecha o bottom sheet e refaz a busca com os novos filtros
 function handleApplyFilters(): void {
   showFilters.value = false
+  gravarFiltrosNaUrl()
   // Refaz a busca se já tiver feito uma busca antes (tem contexto)
   if (searched.value || searchQuery.value.trim().length >= 3) {
     search()
@@ -219,6 +314,7 @@ function handleApplyFilters(): void {
 
 function handleClearFilters(): void {
   clearFilters()
+  gravarFiltrosNaUrl()
 }
 
 function handleClearSearch(): void {
@@ -226,6 +322,7 @@ function handleClearSearch(): void {
   typeaheadInput.value = ''
   clearResults()
   clearSuggestions()
+  gravarFiltrosNaUrl()
 }
 </script>
 
