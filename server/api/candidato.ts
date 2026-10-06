@@ -193,7 +193,7 @@ export default defineCachedEventHandler(async (event) => {
   const sqCandidatos = records.map(r => r.sq_candidato).filter(Boolean)
 
   // Reverted to Fetch PostgREST because direct SQL is failing in this env
-  const { entries: municipiosRanking, municipiosComVoto } = await fetchMunicipiosRanking(postgrestUrl, sqCandidatos)
+  const { entries: municipiosRanking, municipiosComVoto } = await fetchMunicipiosRanking(postgrestUrl, sqCandidatos, uf)
 
   // Calcular percentual
   const totalVotosGeral = records.reduce((acc, r) => acc + r.total_votos, 0)
@@ -216,8 +216,8 @@ export default defineCachedEventHandler(async (event) => {
   // Chave única por slug
   getKey: (event) => {
     const query = getQuery(event)
-    // v15: municípios só com voto > 0 (v14: slug estrito)
-    return `v15:${query.slug || 'unknown'}`
+    // v16: municípios só da UF da página (v15: só voto > 0; v14: slug estrito)
+    return `v16:${query.slug || 'unknown'}`
   },
   // Stale-while-revalidate para resposta instantânea
   swr: true,
@@ -225,7 +225,7 @@ export default defineCachedEventHandler(async (event) => {
   // Apenas respostas de sucesso (return) são persistidas no KV
 })
 
-async function fetchMunicipiosRanking(baseUrl: string, sqCandidatos: number[]): Promise<RankingResult> {
+async function fetchMunicipiosRanking(baseUrl: string, sqCandidatos: number[], uf: string): Promise<RankingResult> {
   const debugInfo: any = { sqCandidatos, method: 'fetch-postgrest' }
   const municipiosComVoto = new Map<string, number>()
   if (sqCandidatos.length === 0)
@@ -237,7 +237,9 @@ async function fetchMunicipiosRanking(baseUrl: string, sqCandidatos: number[]): 
     // inclusive com 0 voto (em eleição geral, ~60% das linhas). Sem o filtro, o
     // ranking trazia municípios zerados e o histórico dizia "185 municípios".
     // Note: sorting by qt_votos_nominais desc at DB level
-    const url = `${baseUrl}/votacao_candidato_munzona?sq_candidato=in.(${idsStr})&qt_votos_nominais=gt.0&select=sq_candidato,nr_turno,nm_municipio,qt_votos_nominais&order=qt_votos_nominais.desc`
+    // sg_uf: o sq de presidente é nacional; sem o filtro, a página "pe-..." do
+    // Lula listava os 5.425 municípios do Brasil
+    const url = `${baseUrl}/votacao_candidato_munzona?sq_candidato=in.(${idsStr})&sg_uf=eq.${uf}&qt_votos_nominais=gt.0&select=sq_candidato,nr_turno,nm_municipio,qt_votos_nominais&order=qt_votos_nominais.desc`
 
     debugInfo.url = url
 

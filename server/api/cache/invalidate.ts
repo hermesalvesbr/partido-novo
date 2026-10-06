@@ -46,11 +46,14 @@ export default defineEventHandler(async (event) => {
       }
     }
     else if (slug) {
-      // Invalidar apenas o slug específico, em qualquer versão da chave
-      // (a chave fixa em v12 deixou de achar nada quando o cache passou para v13)
+      // Invalidar apenas o slug específico, em qualquer versão da chave. O Nitro
+      // tira hífens e ':' da chave ("candidato:_:v16pejoserenan...json"), então
+      // compara só letras e números, depois do prefixo de versão vNN.
+      const alvo = slug.toLowerCase().replace(/[^a-z0-9]/g, '')
       const keys = await storage.getKeys('candidato')
       for (const key of keys) {
-        if (key.endsWith(`:${slug}.json`) || key.endsWith(`:${slug}`)) {
+        const nome = key.split(':').pop()!.replace(/\.json$/, '').replace(/^v\d+/, '')
+        if (nome === alvo) {
           await storage.removeItem(key)
           deletedKeys.push(key)
         }
