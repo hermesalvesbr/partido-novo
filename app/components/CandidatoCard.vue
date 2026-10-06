@@ -15,12 +15,15 @@ const props = withDefaults(defineProps<{
   showMunicipios?: boolean
   /** Variante visual: 'card' para cards soltos, 'list' para dentro de v-list */
   variant?: 'card' | 'list'
+  /** Abre a página do candidato já filtrada no ano deste card (?ano=) */
+  linkComAno?: boolean
 }>(), {
   rank: undefined,
   showAno: true,
   showVotos: true,
   showMunicipios: false,
   variant: 'card',
+  linkComAno: true,
 })
 
 // Composable para passar dados do candidato para a página de detalhes
@@ -86,7 +89,10 @@ function navigateToCandidato(): void {
   })
 
   const slug = generateCandidatoSlug(props.candidato.sg_uf, props.candidato.nm_candidato)
-  navigateTo(`/candidato/${slug}`)
+  // O card mostra uma eleição (ex.: busca filtrada em 2026): a página abre nela,
+  // com "Todas as eleições" a um toque, em vez da carreira somada
+  const ano = props.linkComAno ? props.candidato.ano_eleicao : undefined
+  navigateTo(ano ? { path: `/candidato/${slug}`, query: { ano: String(ano) } } : `/candidato/${slug}`)
 }
 </script>
 

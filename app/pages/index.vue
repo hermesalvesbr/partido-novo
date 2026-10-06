@@ -605,6 +605,7 @@ function handleClearSearch(): void {
               }"
               :rank="index + 1"
               variant="card"
+              :link-com-ano="false"
             />
           </div>
         </template>

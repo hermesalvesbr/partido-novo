@@ -10,6 +10,8 @@ interface MunicipioVotos {
 const props = defineProps<{
   municipios: MunicipioVotos[]
   totalVotos: number
+  /** Eleição em foco; sem ele, o ranking é da carreira toda */
+  ano?: number | null
 }>()
 
 // Estado de carregamento interno para transição suave
@@ -167,7 +169,12 @@ onMounted(() => {
           mdi-information-outline
         </v-icon>
         <span class="text-caption text-medium-emphasis">
-          Ranking baseado no total de votos recebidos em cada município ao longo de todas as eleições.
+          <template v-if="ano">
+            Votos recebidos em cada município na eleição de {{ ano }} (1º turno).
+          </template>
+          <template v-else>
+            Ranking baseado no total de votos recebidos em cada município ao longo de todas as eleições (1º turno).
+          </template>
         </span>
       </div>
     </v-card>

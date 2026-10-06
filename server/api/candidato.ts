@@ -38,6 +38,8 @@ interface CandidatoResponse {
   sg_uf: string
   eleicoes: EleicaoAgregada[]
   municipiosRanking: { nm_municipio: string, total_votos: number, percentual: number }[]
+  /** ranking de municípios de cada eleição (1º turno), para a página filtrada por ano */
+  municipiosPorAno: Record<string, { nm_municipio: string, total_votos: number, percentual: number }[]>
   stats: {
     total_votos: number
     anos_ativo: number[]
@@ -53,6 +55,8 @@ interface RankingResult {
   entries: { nm_municipio: string, total_votos: number }[]
   /** municípios com pelo menos 1 voto, por `${sq_candidato}|${nr_turno}` */
   municipiosComVoto: Map<string, number>
+  /** votos por município em cada ano (1º turno) */
+  porAno: Map<number, Map<string, number>>
   debug?: any
 }
 
@@ -193,17 +197,25 @@ export default defineCachedEventHandler(async (event) => {
   const sqCandidatos = records.map(r => r.sq_candidato).filter(Boolean)
 
   // Reverted to Fetch PostgREST because direct SQL is failing in this env
-  const { entries: municipiosRanking, municipiosComVoto } = await fetchMunicipiosRanking(postgrestUrl, sqCandidatos, uf)
+  const { entries: municipiosRanking, municipiosComVoto, porAno } = await fetchMunicipiosRanking(postgrestUrl, sqCandidatos, uf)
 
-  // Calcular percentual
-  const totalVotosGeral = records.reduce((acc, r) => acc + r.total_votos, 0)
+  // Calcular percentual. Só 1º turno: somar o 2º contaria o mesmo eleitor duas vezes
+  const totalVotosGeral = records.filter(r => r.nr_turno === 1).reduce((acc, r) => acc + r.total_votos, 0)
 
   const rankingComPercentual = municipiosRanking.map(m => ({
     ...m,
     percentual: totalVotosGeral > 0 ? (m.total_votos / totalVotosGeral) * 100 : 0,
   }))
 
-  return buildResponse(records, uf, rankingComPercentual, municipiosComVoto)
+  const municipiosPorAno: CandidatoResponse['municipiosPorAno'] = {}
+  for (const [ano, mapa] of porAno) {
+    const totalAno = [...mapa.values()].reduce((a, v) => a + v, 0)
+    municipiosPorAno[ano] = [...mapa]
+      .map(([nm_municipio, total_votos]) => ({ nm_municipio, total_votos, percentual: totalAno > 0 ? (total_votos / totalAno) * 100 : 0 }))
+      .sort((a, b) => b.total_votos - a.total_votos)
+  }
+
+  return buildResponse(records, uf, rankingComPercentual, municipiosComVoto, municipiosPorAno)
 }, {
   // Cache de 1 ano no Cloudflare KV (dados eleitorais são imutáveis após eleição)
   maxAge: 60 * 60 * 24 * 365, // 1 ano
@@ -216,8 +228,8 @@ export default defineCachedEventHandler(async (event) => {
   // Chave única por slug
   getKey: (event) => {
     const query = getQuery(event)
-    // v16: municípios só da UF da página (v15: só voto > 0; v14: slug estrito)
-    return `v16:${query.slug || 'unknown'}`
+    // v17: ranking por ano e só 1º turno (v16: só a UF da página; v15: só voto > 0; v14: slug estrito)
+    return `v17:${query.slug || 'unknown'}`
   },
   // Stale-while-revalidate para resposta instantânea
   swr: true,
@@ -228,8 +240,9 @@ export default defineCachedEventHandler(async (event) => {
 async function fetchMunicipiosRanking(baseUrl: string, sqCandidatos: number[], uf: string): Promise<RankingResult> {
   const debugInfo: any = { sqCandidatos, method: 'fetch-postgrest' }
   const municipiosComVoto = new Map<string, number>()
+  const porAno = new Map<number, Map<string, number>>()
   if (sqCandidatos.length === 0)
-    return { entries: [], municipiosComVoto, debug: debugInfo }
+    return { entries: [], municipiosComVoto, porAno, debug: debugInfo }
 
   try {
     const idsStr = sqCandidatos.join(',')
@@ -239,7 +252,7 @@ async function fetchMunicipiosRanking(baseUrl: string, sqCandidatos: number[], u
     // Note: sorting by qt_votos_nominais desc at DB level
     // sg_uf: o sq de presidente é nacional; sem o filtro, a página "pe-..." do
     // Lula listava os 5.425 municípios do Brasil
-    const url = `${baseUrl}/votacao_candidato_munzona?sq_candidato=in.(${idsStr})&sg_uf=eq.${uf}&qt_votos_nominais=gt.0&select=sq_candidato,nr_turno,nm_municipio,qt_votos_nominais&order=qt_votos_nominais.desc`
+    const url = `${baseUrl}/votacao_candidato_munzona?sq_candidato=in.(${idsStr})&sg_uf=eq.${uf}&qt_votos_nominais=gt.0&select=sq_candidato,ano_eleicao,nr_turno,nm_municipio,qt_votos_nominais&order=qt_votos_nominais.desc`
 
     debugInfo.url = url
 
@@ -249,10 +262,10 @@ async function fetchMunicipiosRanking(baseUrl: string, sqCandidatos: number[], u
     if (!response.ok) {
       debugInfo.errorText = await response.text()
       console.error('PostgREST error fetching ranking:', debugInfo.errorText)
-      return { entries: [], municipiosComVoto, debug: debugInfo }
+      return { entries: [], municipiosComVoto, porAno, debug: debugInfo }
     }
 
-    const data = await response.json() as { sq_candidato: number, nr_turno: number, nm_municipio: string, qt_votos_nominais: number }[]
+    const data = await response.json() as { sq_candidato: number, ano_eleicao: number, nr_turno: number, nm_municipio: string, qt_votos_nominais: number }[]
     debugInfo.dataLength = data.length
 
     // Aggregate by municipality (client-side aggregation)
@@ -260,10 +273,15 @@ async function fetchMunicipiosRanking(baseUrl: string, sqCandidatos: number[], u
     const porEleicao = new Map<string, Set<string>>()
 
     for (const item of data) {
-      const atual = mapa.get(item.nm_municipio) || 0
-      mapa.set(item.nm_municipio, atual + item.qt_votos_nominais)
       const chave = `${item.sq_candidato}|${item.nr_turno}`
       porEleicao.set(chave, (porEleicao.get(chave) ?? new Set()).add(item.nm_municipio))
+      // Ranking só do 1º turno: somar o 2º contaria o mesmo eleitor duas vezes
+      if (item.nr_turno !== 1)
+        continue
+      mapa.set(item.nm_municipio, (mapa.get(item.nm_municipio) || 0) + item.qt_votos_nominais)
+      const doAno = porAno.get(item.ano_eleicao) ?? new Map<string, number>()
+      doAno.set(item.nm_municipio, (doAno.get(item.nm_municipio) || 0) + item.qt_votos_nominais)
+      porAno.set(item.ano_eleicao, doAno)
     }
     for (const [chave, municipios] of porEleicao)
       municipiosComVoto.set(chave, municipios.size)
@@ -274,12 +292,12 @@ async function fetchMunicipiosRanking(baseUrl: string, sqCandidatos: number[], u
 
     debugInfo.aggregatedCount = entries.length
 
-    return { entries, municipiosComVoto, debug: debugInfo }
+    return { entries, municipiosComVoto, porAno, debug: debugInfo }
   }
   catch (e: any) {
     debugInfo.error = e.message || String(e)
     console.error('Fetch error:', e)
-    return { entries: [], municipiosComVoto, debug: debugInfo }
+    return { entries: [], municipiosComVoto, porAno, debug: debugInfo }
   }
 }
 
@@ -288,6 +306,7 @@ function buildResponse(
   uf: string,
   municipiosRanking: { nm_municipio: string, total_votos: number, percentual: number }[],
   municipiosComVoto: Map<string, number>,
+  municipiosPorAno: CandidatoResponse['municipiosPorAno'],
 ): CandidatoResponse {
   const firstRecord = records[0]!
 
@@ -304,7 +323,8 @@ function buildResponse(
   })).sort((a, b) => b.ano_eleicao - a.ano_eleicao)
 
   // Estatísticas
-  const totalVotos = eleicoes.reduce((acc, e) => acc + e.total_votos, 0)
+  // Só 1º turno: somar o 2º contaria o mesmo eleitor duas vezes
+  const totalVotos = eleicoes.filter(e => e.nr_turno === 1).reduce((acc, e) => acc + e.total_votos, 0)
   const anosAtivo = [...new Set(eleicoes.map(e => e.ano_eleicao))]
   const partidosUsados = [...new Set(eleicoes.map(e => e.sg_partido))]
   const cargosDisputados = [...new Set(eleicoes.map(e => e.ds_cargo))]
@@ -319,6 +339,7 @@ function buildResponse(
     sg_uf: uf,
     eleicoes,
     municipiosRanking,
+    municipiosPorAno,
     stats: {
       total_votos: totalVotos,
       anos_ativo: anosAtivo,

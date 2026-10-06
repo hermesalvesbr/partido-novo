@@ -20,6 +20,11 @@ interface CandidatoData {
     total_votos: number
     percentual: number
   }[]
+  municipiosPorAno?: Record<string, {
+    nm_municipio: string
+    total_votos: number
+    percentual: number
+  }[]>
   stats: {
     total_votos: number
     anos_ativo: number[]
@@ -88,7 +93,7 @@ watch(candidatoData, (data) => {
 // SEO Meta - título dinâmico baseado nos dados do candidato
 useSeoMeta({
   title: () => candidatoData.value?.nm_urna_candidato
-    ? `${candidatoData.value.nm_urna_candidato} - ${candidatoData.value.sg_uf}`
+    ? `${candidatoData.value.nm_urna_candidato} - ${candidatoData.value.sg_uf}${route.query.ano ? ` · ${route.query.ano}` : ''}`
     : 'Candidato',
   description: () => candidatoData.value
     ? `Consulte o histórico eleitoral de ${candidatoData.value.nm_urna_candidato} (${candidatoData.value.sg_uf}). ${candidatoData.value.stats.total_votos.toLocaleString('pt-BR')} votos em ${candidatoData.value.stats.anos_ativo.length} eleições. Partidos: ${candidatoData.value.stats.partidos.join(', ')}.`
@@ -148,6 +153,31 @@ function goBack() {
   // Navega para home em vez de usar histórico (evita loop com página de análise)
   router.push('/')
 }
+
+/**
+ * Eleição em foco (?ano=2026). Quem chega pela busca filtrada num ano vê aquela
+ * eleição, não a carreira somada; o seletor troca para "Todas". O canonical
+ * continua sem query (app.vue).
+ */
+const anosOrdenados = computed(() => [...(candidatoData.value?.stats.anos_ativo ?? [])].sort((a, b) => b - a))
+const anoFoco = computed<number | null>(() => {
+  const ano = Number(route.query.ano)
+  return anosOrdenados.value.includes(ano) ? ano : null
+})
+function escolherAno(valor: unknown) {
+  const { ano: _ano, ...resto } = route.query
+  router.replace({ query: valor === 'todas' || valor == null ? resto : { ...resto, ano: String(valor) } })
+}
+const eleicoesFoco = computed(() => {
+  const todas = candidatoData.value?.eleicoes ?? []
+  return anoFoco.value ? todas.filter(e => e.ano_eleicao === anoFoco.value) : todas
+})
+const primeiroTurnoFoco = computed(() => eleicoesFoco.value.find(e => e.nr_turno === 1) ?? eleicoesFoco.value[0])
+const segundoTurnoFoco = computed(() => (anoFoco.value ? eleicoesFoco.value.find(e => e.nr_turno === 2) : undefined))
+const votosFoco = computed(() => (anoFoco.value ? (primeiroTurnoFoco.value?.total_votos ?? 0) : (candidatoData.value?.stats.total_votos ?? 0)))
+const municipiosFoco = computed(() => (anoFoco.value
+  ? (candidatoData.value?.municipiosPorAno?.[anoFoco.value] ?? [])
+  : (candidatoData.value?.municipiosRanking ?? [])))
 
 // Função para favoritar/desfavoritar
 function handleToggleFavorito() {
@@ -250,11 +280,102 @@ ${url}`
             </v-icon>
             {{ candidatoData.sg_uf }}
           </v-chip>
+
+          <!-- Eleição em foco: um ano ou a carreira toda -->
+          <div v-if="anosOrdenados.length > 1" class="d-flex justify-center mt-3">
+            <v-chip-group
+              :model-value="anoFoco ?? 'todas'"
+              mandatory
+              selected-class="text-primary"
+              @update:model-value="escolherAno"
+            >
+              <v-chip v-for="ano in anosOrdenados" :key="ano" :value="ano" size="small" variant="outlined" filter>
+                {{ ano }}
+              </v-chip>
+              <v-chip value="todas" size="small" variant="outlined" filter>
+                Todas as eleições
+              </v-chip>
+            </v-chip-group>
+          </div>
         </v-card-text>
       </v-card>
 
-      <!-- Estatísticas Resumidas -->
-      <div class="px-4 py-3">
+      <!-- Resumo da eleição em foco -->
+      <div v-if="anoFoco && primeiroTurnoFoco" class="px-4 py-3">
+        <p class="text-overline text-medium-emphasis mb-2">
+          Eleição de {{ anoFoco }}
+        </p>
+
+        <v-row dense>
+          <v-col cols="6">
+            <v-card variant="tonal" color="primary" rounded="lg">
+              <v-card-text class="text-center pa-3">
+                <p class="text-h5 font-weight-bold mb-0">
+                  {{ formatNumber(votosFoco) }}
+                </p>
+                <p class="text-caption text-medium-emphasis mb-0">
+                  Votos{{ segundoTurnoFoco ? ' no 1º turno' : '' }}
+                </p>
+              </v-card-text>
+            </v-card>
+          </v-col>
+
+          <v-col cols="6">
+            <v-card variant="tonal" color="success" rounded="lg">
+              <v-card-text class="text-center pa-3">
+                <p class="text-body-1 font-weight-bold mb-0">
+                  {{ (segundoTurnoFoco ?? primeiroTurnoFoco).ds_sit_tot_turno }}
+                </p>
+                <p class="text-caption text-medium-emphasis mb-0">
+                  Situação
+                </p>
+              </v-card-text>
+            </v-card>
+          </v-col>
+
+          <v-col cols="6">
+            <v-card variant="tonal" color="secondary" rounded="lg">
+              <v-card-text class="text-center pa-3">
+                <p class="text-body-1 font-weight-bold mb-0">
+                  {{ primeiroTurnoFoco.ds_cargo }}
+                </p>
+                <p class="text-caption text-medium-emphasis mb-0">
+                  Cargo · {{ primeiroTurnoFoco.sg_partido }}
+                </p>
+              </v-card-text>
+            </v-card>
+          </v-col>
+
+          <v-col cols="6">
+            <v-card variant="tonal" color="warning" rounded="lg">
+              <v-card-text class="text-center pa-3">
+                <p class="text-h5 font-weight-bold mb-0">
+                  {{ primeiroTurnoFoco.municipios_count }}
+                </p>
+                <p class="text-caption text-medium-emphasis mb-0">
+                  Municípios com voto
+                </p>
+              </v-card-text>
+            </v-card>
+          </v-col>
+
+          <v-col v-if="segundoTurnoFoco" cols="12">
+            <v-card variant="tonal" rounded="lg">
+              <v-card-text class="text-center pa-3">
+                <p class="text-h6 font-weight-bold mb-0">
+                  {{ formatNumber(segundoTurnoFoco.total_votos) }}
+                </p>
+                <p class="text-caption text-medium-emphasis mb-0">
+                  Votos no 2º turno
+                </p>
+              </v-card-text>
+            </v-card>
+          </v-col>
+        </v-row>
+      </div>
+
+      <!-- Estatísticas Resumidas (carreira toda) -->
+      <div v-else class="px-4 py-3">
         <p class="text-overline text-medium-emphasis mb-2">
           Resumo Político
         </p>
@@ -267,7 +388,7 @@ ${url}`
                   {{ formatNumber(candidatoData.stats.total_votos) }}
                 </p>
                 <p class="text-caption text-medium-emphasis mb-0">
-                  Votos Totais
+                  Votos Totais (1º turno)
                 </p>
               </v-card-text>
             </v-card>
@@ -315,7 +436,7 @@ ${url}`
       </div>
 
       <!-- Partidos -->
-      <div class="px-4 pb-3">
+      <div v-if="!anoFoco" class="px-4 pb-3">
         <p class="text-overline text-medium-emphasis mb-2">
           Partidos
         </p>
@@ -332,7 +453,7 @@ ${url}`
       </div>
 
       <!-- Cargos Disputados -->
-      <div class="px-4 pb-3">
+      <div v-if="!anoFoco" class="px-4 pb-3">
         <p class="text-overline text-medium-emphasis mb-2">
           Cargos Disputados
         </p>
@@ -381,13 +502,14 @@ ${url}`
 
       <!-- Distribuição Geográfica (lazy - carrega independente) -->
       <LazyCandidatoGeografia
-        :municipios="candidatoData.municipiosRanking"
-        :total-votos="candidatoData.stats.total_votos"
+        :municipios="municipiosFoco"
+        :total-votos="votosFoco"
+        :ano="anoFoco"
       />
 
       <!-- Histórico de Eleições (novo componente) -->
       <LazyCandidatoHistorico
-        :eleicoes="candidatoData.eleicoes"
+        :eleicoes="eleicoesFoco"
       />
     </div>
   </div>
