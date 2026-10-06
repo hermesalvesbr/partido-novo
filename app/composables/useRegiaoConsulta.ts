@@ -145,6 +145,9 @@ export function useRegiaoConsulta(mesorregiaoId: Ref<number | null>) {
         .eq('sg_uf', uf)
         .eq('ano_eleicao', state.value.anoSelecionado)
         .eq('nr_turno', 1)
+        // o TSE lista todo candidato em todo município, mesmo com 0 voto: sem
+        // este filtro, os zerados contavam como "município votado" e gastavam o limit
+        .gt('total_votos', 0)
         .in('nm_municipio', nomesMunicipios)
         .order('total_votos', { ascending: false })
         .limit(5000)

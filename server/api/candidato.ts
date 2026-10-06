@@ -51,6 +51,8 @@ interface CandidatoResponse {
 
 interface RankingResult {
   entries: { nm_municipio: string, total_votos: number }[]
+  /** municípios com pelo menos 1 voto, por `${sq_candidato}|${nr_turno}` */
+  municipiosComVoto: Map<string, number>
   debug?: any
 }
 
@@ -191,7 +193,7 @@ export default defineCachedEventHandler(async (event) => {
   const sqCandidatos = records.map(r => r.sq_candidato).filter(Boolean)
 
   // Reverted to Fetch PostgREST because direct SQL is failing in this env
-  const { entries: municipiosRanking } = await fetchMunicipiosRanking(postgrestUrl, sqCandidatos)
+  const { entries: municipiosRanking, municipiosComVoto } = await fetchMunicipiosRanking(postgrestUrl, sqCandidatos)
 
   // Calcular percentual
   const totalVotosGeral = records.reduce((acc, r) => acc + r.total_votos, 0)
@@ -201,7 +203,7 @@ export default defineCachedEventHandler(async (event) => {
     percentual: totalVotosGeral > 0 ? (m.total_votos / totalVotosGeral) * 100 : 0,
   }))
 
-  return buildResponse(records, uf, rankingComPercentual)
+  return buildResponse(records, uf, rankingComPercentual, municipiosComVoto)
 }, {
   // Cache de 1 ano no Cloudflare KV (dados eleitorais são imutáveis após eleição)
   maxAge: 60 * 60 * 24 * 365, // 1 ano
@@ -214,8 +216,8 @@ export default defineCachedEventHandler(async (event) => {
   // Chave única por slug
   getKey: (event) => {
     const query = getQuery(event)
-    // v14: slug estrito (a v13 guardou candidato errado para slugs sem match exato)
-    return `v14:${query.slug || 'unknown'}`
+    // v15: municípios só com voto > 0 (v14: slug estrito)
+    return `v15:${query.slug || 'unknown'}`
   },
   // Stale-while-revalidate para resposta instantânea
   swr: true,
@@ -225,13 +227,17 @@ export default defineCachedEventHandler(async (event) => {
 
 async function fetchMunicipiosRanking(baseUrl: string, sqCandidatos: number[]): Promise<RankingResult> {
   const debugInfo: any = { sqCandidatos, method: 'fetch-postgrest' }
+  const municipiosComVoto = new Map<string, number>()
   if (sqCandidatos.length === 0)
-    return { entries: [], debug: debugInfo }
+    return { entries: [], municipiosComVoto, debug: debugInfo }
 
   try {
     const idsStr = sqCandidatos.join(',')
+    // Só linhas com voto: o TSE lista todo candidato em todo município do estado,
+    // inclusive com 0 voto (em eleição geral, ~60% das linhas). Sem o filtro, o
+    // ranking trazia municípios zerados e o histórico dizia "185 municípios".
     // Note: sorting by qt_votos_nominais desc at DB level
-    const url = `${baseUrl}/votacao_candidato_munzona?sq_candidato=in.(${idsStr})&select=nm_municipio,qt_votos_nominais&order=qt_votos_nominais.desc`
+    const url = `${baseUrl}/votacao_candidato_munzona?sq_candidato=in.(${idsStr})&qt_votos_nominais=gt.0&select=sq_candidato,nr_turno,nm_municipio,qt_votos_nominais&order=qt_votos_nominais.desc`
 
     debugInfo.url = url
 
@@ -241,19 +247,24 @@ async function fetchMunicipiosRanking(baseUrl: string, sqCandidatos: number[]): 
     if (!response.ok) {
       debugInfo.errorText = await response.text()
       console.error('PostgREST error fetching ranking:', debugInfo.errorText)
-      return { entries: [], debug: debugInfo }
+      return { entries: [], municipiosComVoto, debug: debugInfo }
     }
 
-    const data = await response.json() as { nm_municipio: string, qt_votos_nominais: number }[]
+    const data = await response.json() as { sq_candidato: number, nr_turno: number, nm_municipio: string, qt_votos_nominais: number }[]
     debugInfo.dataLength = data.length
 
     // Aggregate by municipality (client-side aggregation)
     const mapa = new Map<string, number>()
+    const porEleicao = new Map<string, Set<string>>()
 
     for (const item of data) {
       const atual = mapa.get(item.nm_municipio) || 0
       mapa.set(item.nm_municipio, atual + item.qt_votos_nominais)
+      const chave = `${item.sq_candidato}|${item.nr_turno}`
+      porEleicao.set(chave, (porEleicao.get(chave) ?? new Set()).add(item.nm_municipio))
     }
+    for (const [chave, municipios] of porEleicao)
+      municipiosComVoto.set(chave, municipios.size)
 
     const entries = Array.from(mapa.entries())
       .map(([nm_municipio, total_votos]) => ({ nm_municipio, total_votos }))
@@ -261,12 +272,12 @@ async function fetchMunicipiosRanking(baseUrl: string, sqCandidatos: number[]): 
 
     debugInfo.aggregatedCount = entries.length
 
-    return { entries, debug: debugInfo }
+    return { entries, municipiosComVoto, debug: debugInfo }
   }
   catch (e: any) {
     debugInfo.error = e.message || String(e)
     console.error('Fetch error:', e)
-    return { entries: [], debug: debugInfo }
+    return { entries: [], municipiosComVoto, debug: debugInfo }
   }
 }
 
@@ -274,6 +285,7 @@ function buildResponse(
   records: VotosCandidatoRecord[],
   uf: string,
   municipiosRanking: { nm_municipio: string, total_votos: number, percentual: number }[],
+  municipiosComVoto: Map<string, number>,
 ): CandidatoResponse {
   const firstRecord = records[0]!
 
@@ -285,7 +297,8 @@ function buildResponse(
     nr_turno: r.nr_turno,
     ds_sit_tot_turno: r.ds_sit_tot_turno,
     total_votos: r.total_votos,
-    municipios_count: r.municipios_votados,
+    // mv_votos_candidato.municipios_votados conta também municípios com 0 voto
+    municipios_count: municipiosComVoto.get(`${r.sq_candidato}|${r.nr_turno}`) ?? 0,
   })).sort((a, b) => b.ano_eleicao - a.ano_eleicao)
 
   // Estatísticas
