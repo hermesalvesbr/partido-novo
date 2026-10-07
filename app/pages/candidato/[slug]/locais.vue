@@ -57,13 +57,24 @@ const cabecalhosEscolas = [
   { title: 'Votos', key: 'votos', align: 'end' as const },
   { title: '% local', key: 'pctLocal', align: 'end' as const },
 ]
-const cabecalhosBairros = computed(() => [
+const cabecalhosBairros = [
   { title: 'Bairro', key: 'nome' },
-  ...(municipio.value ? [] : [{ title: 'Município', key: 'municipio' }]),
   { title: 'Locais', key: 'locais', align: 'end' as const },
   { title: 'Votos', key: 'votos', align: 'end' as const },
-  { title: '% do total', key: 'pctTotal', align: 'end' as const },
-])
+  { title: '% total', key: 'pctTotal', align: 'end' as const },
+]
+
+// Tabelas voltam à 1ª página quando o filtro muda, senão podem ficar numa página vazia
+const paginaEscolas = ref(1)
+const paginaBairros = ref(1)
+watch(municipio, () => {
+  paginaEscolas.value = 1
+  paginaBairros.value = 1
+})
+
+function filtrarMunicipio(nome: string) {
+  municipio.value = nome
+}
 
 function filtrarEscola(_valor: unknown, termo: string, item?: { raw: { local: string, bairro: string, municipio: string } }) {
   if (!item)
@@ -132,7 +143,8 @@ useSeoMeta({
       </v-btn>
     </div>
 
-    <div v-else class="flex-grow-1 overflow-y-auto bg-grey-lighten-4">
+    <!-- Sem overflow aqui: quem rola é a janela, e o filtro sticky depende disso -->
+    <div v-else class="flex-grow-1 bg-grey-lighten-4">
       <!-- Cabeçalho -->
       <v-card flat class="rounded-0">
         <v-card-text class="pa-4">
@@ -145,8 +157,8 @@ useSeoMeta({
         </v-card-text>
       </v-card>
 
-      <!-- Filtro de município -->
-      <div class="px-4 pt-4">
+      <!-- Filtro de município: fica preso no topo enquanto rola mapa, escolas e bairros -->
+      <div class="filtro-municipio px-4 pt-3 pb-2">
         <v-autocomplete
           v-model="municipio"
           :items="municipiosOpcoes"
@@ -165,7 +177,7 @@ useSeoMeta({
       </div>
 
       <!-- Números -->
-      <div class="px-4 pt-3">
+      <div class="px-4 pt-1">
         <v-row dense>
           <v-col cols="6" sm="3">
             <v-card variant="flat" rounded="lg" class="pa-3 h-100">
@@ -265,6 +277,7 @@ useSeoMeta({
                 />
               </div>
               <v-data-table
+                v-model:page="paginaEscolas"
                 :headers="cabecalhosEscolas"
                 :items="escolas"
                 :search="busca ?? ''"
@@ -285,7 +298,7 @@ useSeoMeta({
                     </p>
                     <p class="text-caption text-medium-emphasis mb-0">
                       {{ item.bairro }}<template v-if="!municipio">
-                        · {{ item.municipio }}
+                        · <a href="#" class="link-municipio" @click.prevent="filtrarMunicipio(item.municipio)">{{ item.municipio }}</a>
                       </template> · zona {{ item.zona }}
                     </p>
                   </div>
@@ -313,9 +326,11 @@ useSeoMeta({
               </div>
               <v-divider />
               <v-data-table
+                v-model:page="paginaBairros"
                 :headers="cabecalhosBairros"
                 :items="bairros"
                 :items-per-page="25"
+                :sort-by="[{ key: 'votos', order: 'desc' }]"
                 :item-value="(b: { municipio?: string, nome: string }) => `${b.municipio}|${b.nome}`"
                 class="tabela-locais"
                 density="compact"
@@ -324,6 +339,16 @@ useSeoMeta({
               >
                 <template #[`item.votos`]="{ item }">
                   <span class="font-weight-bold">{{ item.votos.toLocaleString('pt-BR') }}</span>
+                </template>
+                <template #[`item.nome`]="{ item }">
+                  <div class="py-2">
+                    <p class="text-body-2 font-weight-medium mb-0">
+                      {{ item.nome }}
+                    </p>
+                    <p v-if="!municipio && item.municipio" class="text-caption text-medium-emphasis mb-0">
+                      <a href="#" class="link-municipio" @click.prevent="filtrarMunicipio(item.municipio)">{{ item.municipio }}</a>
+                    </p>
+                  </div>
                 </template>
                 <template #[`item.pctTotal`]="{ item }">
                   {{ item.pctTotal.toFixed(1) }}%
@@ -381,6 +406,23 @@ useSeoMeta({
 </template>
 
 <style scoped>
+.filtro-municipio {
+  position: sticky;
+  /* altura das barras fixas do layout (Vuetify) */
+  top: var(--v-layout-top, 0px);
+  z-index: 5;
+  /* mesma cor do bg-grey-lighten-4 da página */
+  background: #f5f5f5;
+}
+.link-municipio {
+  color: inherit;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+.link-municipio:hover {
+  color: rgb(var(--v-theme-primary));
+}
+
 /* No celular a tabela precisa de cada pixel: menos respiro lateral nas células */
 @media (max-width: 599px) {
   .tabela-locais :deep(th),
