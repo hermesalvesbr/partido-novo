@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ANOS_COM_LOCAIS, UFS_COM_LOCAIS } from '~/data/eleicoes'
 import { formatNumber } from '~/utils/formatters'
 
 // Interface para os dados do candidato vindos da API
@@ -175,6 +176,12 @@ const eleicoesFoco = computed(() => {
 const primeiroTurnoFoco = computed(() => eleicoesFoco.value.find(e => e.nr_turno === 1) ?? eleicoesFoco.value[0])
 const segundoTurnoFoco = computed(() => (anoFoco.value ? eleicoesFoco.value.find(e => e.nr_turno === 2) : undefined))
 const votosFoco = computed(() => (anoFoco.value ? (primeiroTurnoFoco.value?.total_votos ?? 0) : (candidatoData.value?.stats.total_votos ?? 0)))
+// Ano com votos por escola: o ano em foco, ou a última eleição quando a página mostra a carreira toda
+const anoLocais = computed<number | null>(() => {
+  const c = candidatoData.value
+  const ano = anoFoco.value ?? c?.eleicoes[0]?.ano_eleicao ?? null
+  return c && ano && ANOS_COM_LOCAIS.includes(ano) && UFS_COM_LOCAIS.includes(c.sg_uf) ? ano : null
+})
 const municipiosFoco = computed(() => (anoFoco.value
   ? (candidatoData.value?.municipiosPorAno?.[anoFoco.value] ?? [])
   : (candidatoData.value?.municipiosRanking ?? [])))
@@ -499,6 +506,13 @@ ${url}`
           </v-card-text>
         </v-card>
       </div>
+
+      <!-- Escolas com mais votos (só anos com votação por seção importada) -->
+      <LazyCandidatoLocaisResumo
+        v-if="anoLocais"
+        :slug="slug"
+        :ano="anoLocais"
+      />
 
       <!-- Distribuição Geográfica (lazy - carrega independente) -->
       <LazyCandidatoGeografia

@@ -5,8 +5,13 @@
  * - POST /api/cache/invalidate?slug=pe-joao-silva  (invalida um candidato específico)
  * - POST /api/cache/invalidate?all=true            (invalida todo o cache de candidatos)
  *
+ * Cobre /api/candidato e /api/candidato-locais.
+ *
  * Requer header Authorization com token configurado em NUXT_CACHE_INVALIDATE_TOKEN
  */
+
+// Grupos de cache (defineCachedEventHandler) com dados do candidato
+const GRUPOS = ['candidato', 'candidato-locais']
 
 export default defineEventHandler(async (event) => {
   // Verificar método
@@ -38,24 +43,31 @@ export default defineEventHandler(async (event) => {
 
   try {
     if (all) {
-      // Buscar todas as chaves do grupo candidato
-      const keys = await storage.getKeys('candidato')
-      for (const key of keys) {
-        await storage.removeItem(key)
-        deletedKeys.push(key)
+      // Buscar todas as chaves dos grupos do candidato
+      for (const grupo of GRUPOS) {
+        const keys = await storage.getKeys(grupo)
+        for (const key of keys) {
+          await storage.removeItem(key)
+          deletedKeys.push(key)
+        }
       }
     }
     else if (slug) {
       // Invalidar apenas o slug específico, em qualquer versão da chave. O Nitro
       // tira hífens e ':' da chave ("candidato:_:v16pejoserenan...json"), então
       // compara só letras e números, depois do prefixo de versão vNN.
+      // Em candidato-locais a chave termina com o ano ("v1:pe-fulano:2026"),
+      // ou "ultimo" quando a página não pediu ano.
       const alvo = slug.toLowerCase().replace(/[^a-z0-9]/g, '')
-      const keys = await storage.getKeys('candidato')
-      for (const key of keys) {
-        const nome = key.split(':').pop()!.replace(/\.json$/, '').replace(/^v\d+/, '')
-        if (nome === alvo) {
-          await storage.removeItem(key)
-          deletedKeys.push(key)
+      for (const grupo of GRUPOS) {
+        const keys = await storage.getKeys(grupo)
+        for (const key of keys) {
+          const nome = key.split(':').pop()!.replace(/\.json$/, '').replace(/^v\d+/, '')
+          const sufixo = nome.startsWith(alvo) ? nome.slice(alvo.length) : null
+          if (sufixo === '' || (grupo !== 'candidato' && sufixo !== null && /^(?:\d{4}|ultimo)$/.test(sufixo))) {
+            await storage.removeItem(key)
+            deletedKeys.push(key)
+          }
         }
       }
     }

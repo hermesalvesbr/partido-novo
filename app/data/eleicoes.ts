@@ -200,3 +200,69 @@ export interface StatsPartido {
   media_votos: number
   eleitos: number
 }
+
+// ---------------------------------------------------------------------------
+// Votos por local de votação (escola). Só existe para os anos/UFs importados
+// com scripts/import_locais.ts a partir dos arquivos de seção do TSE.
+// ---------------------------------------------------------------------------
+export const ANOS_COM_LOCAIS: readonly number[] = [2026]
+export const UFS_COM_LOCAIS: readonly string[] = ['PE']
+
+export type TipoArea = 'sede' | 'distrito' | 'povoado' | 'rural'
+
+export const TIPOS_AREA: Record<TipoArea, string> = {
+  sede: 'Sede (bairros urbanos)',
+  distrito: 'Distritos',
+  povoado: 'Povoados e sítios',
+  rural: 'Zona rural',
+}
+
+/** Uma escola (local de votação) com os votos do candidato */
+export interface LocalVotacaoVotos {
+  /** chave cd_municipio-zona-local */
+  id: string
+  municipio: string
+  zona: number
+  local: string
+  bairro: string
+  area: TipoArea
+  lat: number | null
+  lon: number | null
+  eleitores: number
+  votos: number
+  /** votos do candidato sobre os válidos do cargo naquele local */
+  pctLocal: number
+}
+
+/** Linha agregada (bairro, área, zona, micro ou mesorregião) */
+export interface AgregadoVotos {
+  nome: string
+  /** município, quando o nome sozinho é ambíguo (bairros, zonas) */
+  municipio?: string
+  votos: number
+  locais: number
+  pctTotal: number
+}
+
+export interface MunicipioLocais {
+  nome: string
+  /** código IBGE, o mesmo de public/geo/pe-municipios.json (codarea) */
+  cdIbge: number | null
+  votos: number
+  locais: number
+  microrregiao: string
+  mesorregiao: string
+}
+
+export interface CandidatoLocaisResponse {
+  disponivel: boolean
+  ano: number
+  turno: number
+  nm_urna_candidato: string
+  nm_candidato: string
+  ds_cargo: string
+  sg_partido: string
+  totalVotos: number
+  locais: LocalVotacaoVotos[]
+  municipios: MunicipioLocais[]
+}

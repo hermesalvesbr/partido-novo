@@ -9,7 +9,7 @@
 
 import type { SitemapUrlInput } from '#sitemap/types'
 import { defineSitemapEventHandler } from '#imports'
-import { ESTADOS } from '~/data/eleicoes'
+import { ANOS_COM_LOCAIS, ESTADOS, UFS_COM_LOCAIS } from '~/data/eleicoes'
 
 interface CandidatoMeta {
   nome: string
@@ -62,6 +62,18 @@ export default defineSitemapEventHandler(async () => {
                 ? new Date(meta.lastAccess).toISOString()
                 : new Date(`${meta.anoEleicao}-12-31`).toISOString(),
             })
+
+            // Votos por escola, só onde a votação por seção foi importada
+            if (ANOS_COM_LOCAIS.includes(meta.anoEleicao) && UFS_COM_LOCAIS.includes(uf)) {
+              urls.push({
+                loc: `/candidato/${slug}/locais`,
+                priority: 0.7,
+                changefreq: 'monthly',
+                lastmod: meta.lastAccess
+                  ? new Date(meta.lastAccess).toISOString()
+                  : new Date(`${meta.anoEleicao}-12-31`).toISOString(),
+              })
+            }
           }
         }
       }
