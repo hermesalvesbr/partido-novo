@@ -507,12 +507,16 @@ ${url}`
         </v-card>
       </div>
 
-      <!-- Escolas com mais votos (só anos com votação por seção importada) -->
-      <LazyCandidatoLocaisResumo
-        v-if="anoLocais"
-        :slug="slug"
-        :ano="anoLocais"
-      />
+      <!-- Escolas com mais votos (só anos com votação por seção importada).
+           ClientOnly: o card busca só no cliente, e o skeleton dele não pode
+           divergir do HTML do servidor na hidratação -->
+      <ClientOnly>
+        <LazyCandidatoLocaisResumo
+          v-if="anoLocais"
+          :slug="slug"
+          :ano="anoLocais"
+        />
+      </ClientOnly>
 
       <!-- Distribuição Geográfica (lazy - carrega independente) -->
       <LazyCandidatoGeografia
